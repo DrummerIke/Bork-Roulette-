@@ -18,7 +18,27 @@ create table if not exists public.roulette_draws (
 alter table public.roulette_phone_entries enable row level security;
 alter table public.roulette_draws enable row level security;
 
-create policy "roulette entries public read" on public.roulette_phone_entries for select using (true);
-create policy "roulette entries public insert" on public.roulette_phone_entries for insert with check (true);
-create policy "roulette draws public read" on public.roulette_draws for select using (true);
-create policy "roulette draws public insert" on public.roulette_draws for insert with check (true);
+-- Таблица employees уже существует. Для виджета нужен select через anon key.
+-- Если RLS на employees включен, эта политика откроет только чтение списка сотрудников.
+do $$
+begin
+  if not exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'employees' and policyname = 'employees public read') then
+    create policy "employees public read" on public.employees for select using (true);
+  end if;
+
+  if not exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'roulette_phone_entries' and policyname = 'roulette entries public read') then
+    create policy "roulette entries public read" on public.roulette_phone_entries for select using (true);
+  end if;
+
+  if not exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'roulette_phone_entries' and policyname = 'roulette entries public insert') then
+    create policy "roulette entries public insert" on public.roulette_phone_entries for insert with check (true);
+  end if;
+
+  if not exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'roulette_draws' and policyname = 'roulette draws public read') then
+    create policy "roulette draws public read" on public.roulette_draws for select using (true);
+  end if;
+
+  if not exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'roulette_draws' and policyname = 'roulette draws public insert') then
+    create policy "roulette draws public insert" on public.roulette_draws for insert with check (true);
+  end if;
+end $$;

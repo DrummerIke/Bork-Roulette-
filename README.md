@@ -6,11 +6,11 @@
 
 1. Выполните SQL из `supabase.sql` в Supabase SQL Editor.
 2. Убедитесь, что таблица `public.employees` доступна на чтение для anon key и содержит поля `id uuid` и `name text`.
-3. В Google Sites перед `src/app.js` задайте публичные ключи проекта:
+3. Виджет уже содержит текущий публичный Supabase URL как fallback. Если ключ нужно заменить, в Google Sites перед `src/app.js` задайте публичные ключи проекта:
 
 ```html
 <script>
-  window.BORK_SUPABASE_URL = 'https://your-project.supabase.co';
+  window.BORK_SUPABASE_URL = 'https://mhtbolnovisgdliphsmf.supabase.co';
   window.BORK_SUPABASE_ANON_KEY = 'your-anon-key';
 </script>
 ```
