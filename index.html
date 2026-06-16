@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Bork Roulette</title>
+    <link rel="stylesheet" href="src/styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="hero">
+        <div>
+          <p class="eyebrow">Bork Roulette</p>
+          <h1>Телефонная рулетка</h1>
+          <p class="hero-text">Сохраняйте номера по датам и честно выбирайте заявку с учетом победителей текущей недели.</p>
+        </div>
+        <div class="status" id="connectionStatus">Подключение…</div>
+      </header>
+
+      <nav class="tabs" aria-label="Разделы">
+        <button class="tab active" type="button" data-tab="entry">Форма</button>
+        <button class="tab" type="button" data-tab="randomizer">Рандомайзер</button>
+      </nav>
+
+      <section class="panel active" id="entryPanel" aria-labelledby="entryTab">
+        <form class="card form-grid" id="entryForm">
+          <label>
+            <span>Сотрудник</span>
+            <select id="employeeSelect" required>
+              <option value="">Загрузка сотрудников…</option>
+            </select>
+          </label>
+          <label>
+            <span>Телефон</span>
+            <input id="phoneInput" type="tel" inputmode="tel" placeholder="+7 999 123-45-67" required />
+          </label>
+          <label>
+            <span>Дата</span>
+            <input id="dateInput" type="text" placeholder="dd-mm-yyyy" pattern="\d{2}-\d{2}-\d{4}" required />
+          </label>
+          <button class="primary" type="submit">Сохранить</button>
+        </form>
+      </section>
+
+      <section class="panel" id="randomizerPanel" aria-labelledby="randomizerTab">
+        <div class="card randomizer-card">
+          <label>
+            <span>Дата отбора</span>
+            <select id="drawDateSelect">
+              <option value="">Загрузка дат…</option>
+            </select>
+          </label>
+          <div class="actions">
+            <button class="primary" type="button" id="drawButton">Отобрать</button>
+            <button type="button" id="redrawButton" disabled>Отобрать еще раз</button>
+            <button type="button" id="saveDrawButton" disabled>Сохранить</button>
+          </div>
+          <article class="winner" id="winnerCard" hidden>
+            <p class="eyebrow">Выбранный номер</p>
+            <h2 id="winnerPhone">—</h2>
+            <p id="winnerEmployee">—</p>
+            <small id="winnerChance">—</small>
+          </article>
+        </div>
+      </section>
+
+      <p class="toast" id="toast" role="status" aria-live="polite"></p>
+    </main>
+    <script type="module" src="src/app.js"></script>
+  </body>
+</html>
