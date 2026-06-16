@@ -15,7 +15,7 @@
 }
 
 * { box-sizing: border-box; }
-html, body { min-height: 100%; margin: 0; background: transparent; }
+html, body { min-height: 100%; margin: 0; background: transparent !important; background-color: transparent !important; }
 body { color: var(--white); letter-spacing: .01em; }
 button, input, select { font: inherit; }
 
@@ -24,6 +24,7 @@ button, input, select { font: inherit; }
   width: min(1040px, calc(100vw - 24px));
   margin: 0 auto;
   padding: 18px 0 22px;
+  background: transparent !important;
 }
 
 
