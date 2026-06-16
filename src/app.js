@@ -5,6 +5,7 @@ const SUPABASE_ANON_KEY = window.BORK_SUPABASE_ANON_KEY || window.NEXT_PUBLIC_SU
 const TABLE_ENTRIES = 'roulette_phone_entries';
 const TABLE_DRAWS = 'roulette_draws';
 const EMPLOYEES_TABLE = 'employees';
+const MONTHS = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'];
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   auth: { persistSession: false },
@@ -12,14 +13,12 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
 });
 
 const $ = (id) => document.getElementById(id);
-const state = { employees: [], entries: [], currentWinner: null };
+const state = { employees: [], currentWinner: null, selectedDate: new Date(), calendarMonth: new Date() };
 
-const toIsoDate = (value) => {
-  const [day, month, year] = value.split('-');
-  return `${year}-${month}-${day}`;
-};
+const pad = (value) => String(value).padStart(2, '0');
+const toLocalIso = (date) => `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 const toRuDate = (iso) => iso.split('-').reverse().join('-');
-const todayRu = () => toRuDate(new Date().toISOString().slice(0, 10));
+const todayRu = () => toRuDate(toLocalIso(new Date()));
 const showToast = (message) => { $('toast').textContent = message; };
 const setStatus = (message, type = '') => { $('connectionStatus').textContent = message; $('connectionStatus').className = `status ${type}`; };
 
@@ -30,11 +29,54 @@ function startOfWeek(date = new Date()) {
   return copy.toISOString().slice(0, 10);
 }
 
-function validateRuDate(value) {
-  if (!/^\d{2}-\d{2}-\d{4}$/.test(value)) return false;
-  const iso = toIsoDate(value);
-  const parsed = new Date(`${iso}T00:00:00Z`);
-  return parsed.toISOString().slice(0, 10) === iso;
+function setSelectedDate(date) {
+  state.selectedDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  $('dateIsoInput').value = toLocalIso(state.selectedDate);
+  $('dateInput').textContent = toRuDate($('dateIsoInput').value);
+  renderCalendar();
+}
+
+function toggleCalendar(forceOpen) {
+  const calendar = $('calendar');
+  const shouldOpen = typeof forceOpen === 'boolean' ? forceOpen : calendar.hidden;
+  calendar.hidden = !shouldOpen;
+  $('dateTrigger').setAttribute('aria-expanded', String(shouldOpen));
+}
+
+function renderCalendar() {
+  const year = state.calendarMonth.getFullYear();
+  const month = state.calendarMonth.getMonth();
+  const firstDay = new Date(year, month, 1);
+  const startOffset = (firstDay.getDay() + 6) % 7;
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const selectedIso = toLocalIso(state.selectedDate);
+  const todayIso = toLocalIso(new Date());
+
+  $('calendarTitle').textContent = `${MONTHS[month]} ${year}`;
+  $('calendarGrid').innerHTML = '';
+
+  for (let i = 0; i < startOffset; i += 1) {
+    const empty = document.createElement('span');
+    empty.className = 'calendar-empty';
+    $('calendarGrid').append(empty);
+  }
+
+  for (let day = 1; day <= daysInMonth; day += 1) {
+    const date = new Date(year, month, day);
+    const iso = toLocalIso(date);
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'calendar-day';
+    button.textContent = String(day);
+    button.setAttribute('aria-label', toRuDate(iso));
+    if (iso === selectedIso) button.classList.add('selected');
+    if (iso === todayIso) button.classList.add('today');
+    button.addEventListener('click', () => {
+      setSelectedDate(date);
+      toggleCalendar(false);
+    });
+    $('calendarGrid').append(button);
+  }
 }
 
 async function loadEmployees() {
@@ -58,10 +100,10 @@ async function saveEntry(event) {
   event.preventDefault();
   const employeeId = $('employeeSelect').value;
   const phone = $('phoneInput').value.trim();
-  const date = $('dateInput').value.trim();
-  if (!validateRuDate(date)) return showToast('Дата должна быть реальной и в формате dd-mm-yyyy');
+  const entryDate = $('dateIsoInput').value;
+  if (!entryDate) return showToast('Выберите дату');
 
-  const { error } = await supabase.from(TABLE_ENTRIES).insert({ employee_id: employeeId, phone, entry_date: toIsoDate(date) });
+  const { error } = await supabase.from(TABLE_ENTRIES).insert({ employee_id: employeeId, phone, entry_date: entryDate });
   if (error) return showToast(`Ошибка сохранения: ${error.message}`);
   $('phoneInput').value = '';
   showToast('Номер сохранен');
@@ -110,12 +152,30 @@ async function saveDraw() {
   showToast('Результат отбора сохранен');
 }
 
+function bindCalendar() {
+  $('dateTrigger').addEventListener('click', () => toggleCalendar());
+  $('prevMonth').addEventListener('click', () => {
+    state.calendarMonth = new Date(state.calendarMonth.getFullYear(), state.calendarMonth.getMonth() - 1, 1);
+    renderCalendar();
+  });
+  $('nextMonth').addEventListener('click', () => {
+    state.calendarMonth = new Date(state.calendarMonth.getFullYear(), state.calendarMonth.getMonth() + 1, 1);
+    renderCalendar();
+  });
+  document.addEventListener('click', (event) => {
+    if (!$('calendar').hidden && !$('calendar').contains(event.target) && !$('dateTrigger').contains(event.target)) {
+      toggleCalendar(false);
+    }
+  });
+}
+
 function bindUi() {
   document.querySelectorAll('.tab').forEach((button) => button.addEventListener('click', () => {
     document.querySelectorAll('.tab,.panel').forEach((item) => item.classList.remove('active'));
     button.classList.add('active');
     $(`${button.dataset.tab}Panel`).classList.add('active');
   }));
+  bindCalendar();
   $('entryForm').addEventListener('submit', saveEntry);
   $('drawButton').addEventListener('click', drawWinner);
   $('redrawButton').addEventListener('click', drawWinner);
@@ -123,15 +183,16 @@ function bindUi() {
 }
 
 async function init() {
-  $('dateInput').value = todayRu();
+  setSelectedDate(new Date());
   bindUi();
   try {
     await loadEmployees();
     await loadDrawDates();
     setStatus('Supabase подключен', 'ok');
+    showToast(`Готово: сотрудники загружены (${state.employees.length}). ${todayRu()}`);
   } catch (error) {
-    setStatus('Нужно настроить Supabase', 'error');
-    showToast(`Проверьте window.BORK_SUPABASE_URL / window.BORK_SUPABASE_ANON_KEY и CORS: ${error.message}`);
+    setStatus('Ошибка подключения', 'error');
+    showToast(`Проверьте RLS/CORS и таблицы employees, ${TABLE_ENTRIES}, ${TABLE_DRAWS}: ${error.message}`);
   }
 }
 
