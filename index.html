@@ -19,6 +19,7 @@
       <nav class="tabs" aria-label="Разделы">
         <button class="tab active" type="button" data-tab="entry">Форма</button>
         <button class="tab" type="button" data-tab="randomizer">Рандомайзер</button>
+        <button class="tab" type="button" data-tab="stats">Статистика</button>
       </nav>
 
       <section class="panel active" id="entryPanel" aria-labelledby="entryTab">
@@ -78,9 +79,38 @@
         </div>
       </section>
 
+
+      <section class="panel" id="statsPanel" aria-labelledby="statsTab">
+        <div class="card stats-card">
+          <div class="stats-head">
+            <label>
+              <span>День статистики</span>
+              <select id="statsDateSelect">
+                <option value="">Загрузка дат…</option>
+              </select>
+            </label>
+            <button type="button" id="refreshStatsButton">Обновить</button>
+          </div>
+          <div class="stats-summary" id="statsSummary">
+            <span>Заполнили: —</span>
+            <span>Не заполнили: —</span>
+          </div>
+          <div class="stats-columns">
+            <section>
+              <h2>Заполнили</h2>
+              <div class="person-list" id="filledList"></div>
+            </section>
+            <section>
+              <h2>Не заполнили</h2>
+              <div class="person-list" id="missingList"></div>
+            </section>
+          </div>
+        </div>
+      </section>
+
       <div class="roulette-lock" id="rouletteLock" hidden>
         <div class="lock-card">
-          <p class="eyebrow">Доступ к рандомайзеру</p>
+          <p class="eyebrow">Доступ к закрытому разделу</p>
           <h2>Введите пароль</h2>
           <form id="passwordForm">
             <input id="passwordInput" type="password" inputmode="numeric" autocomplete="off" placeholder="Пароль" required />

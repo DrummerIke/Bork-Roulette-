@@ -7,6 +7,7 @@ const TABLE_DRAWS = 'roulette_draws';
 const EMPLOYEES_TABLE = 'employees';
 const MONTHS = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'];
 const ROULETTE_PASSWORD = '06062025';
+const PROTECTED_TABS = ['randomizer', 'stats'];
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   auth: { persistSession: false },
@@ -14,7 +15,7 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
 });
 
 const $ = (id) => document.getElementById(id);
-const state = { employees: [], currentWinner: null, selectedDate: new Date(), calendarMonth: new Date(), rouletteUnlocked: sessionStorage.getItem('borkRouletteUnlocked') === 'true' };
+const state = { employees: [], currentWinner: null, selectedDate: new Date(), calendarMonth: new Date(), rouletteUnlocked: sessionStorage.getItem('borkRouletteUnlocked') === 'true', pendingProtectedTab: 'randomizer' };
 
 const pad = (value) => String(value).padStart(2, '0');
 const toLocalIso = (date) => `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
@@ -82,13 +83,23 @@ async function loadEmployees() {
     state.employees.map((employee) => `<option value="${employee.id}">${employee.name}</option>`).join('');
 }
 
-async function loadDrawDates() {
+async function loadEntryDates() {
   const { data, error } = await supabase.from(TABLE_ENTRIES).select('entry_date').order('entry_date', { ascending: false });
   if (error) throw error;
-  const dates = [...new Set((data || []).map((row) => row.entry_date))];
-  $('drawDateSelect').innerHTML = dates.length
+  const todayIso = toLocalIso(new Date());
+  return [...new Set([todayIso, ...(data || []).map((row) => row.entry_date)])];
+}
+
+function fillDateSelect(selectId, dates, emptyText) {
+  $(selectId).innerHTML = dates.length
     ? dates.map((date) => `<option value="${date}">${toRuDate(date)}</option>`).join('')
-    : '<option value="">Нет сохраненных дат</option>';
+    : `<option value="">${emptyText}</option>`;
+}
+
+async function loadDrawDates() {
+  const dates = await loadEntryDates();
+  fillDateSelect('drawDateSelect', dates, 'Нет сохраненных дат');
+  fillDateSelect('statsDateSelect', dates, 'Нет дат для статистики');
 }
 
 async function saveEntry(event) {
@@ -103,6 +114,37 @@ async function saveEntry(event) {
   $('phoneInput').value = '';
   showToast('Номер сохранен');
   await loadDrawDates();
+  await renderStats();
+}
+
+async function renderStats() {
+  if (!state.rouletteUnlocked) return;
+  const date = $('statsDateSelect').value || toLocalIso(new Date());
+  if (!date) return;
+  const { data: entries, error } = await supabase
+    .from(TABLE_ENTRIES)
+    .select('employee_id,phone,employees(name)')
+    .eq('entry_date', date);
+  if (error) {
+    showToast(`Ошибка статистики: ${error.message}`);
+    return;
+  }
+
+  const filledByEmployee = (entries || []).reduce((acc, entry) => {
+    if (!acc[entry.employee_id]) acc[entry.employee_id] = [];
+    acc[entry.employee_id].push(entry.phone);
+    return acc;
+  }, {});
+  const filled = state.employees.filter((employee) => filledByEmployee[employee.id]);
+  const missing = state.employees.filter((employee) => !filledByEmployee[employee.id]);
+
+  $('statsSummary').innerHTML = `<span>Заполнили: ${filled.length}</span><span>Не заполнили: ${missing.length}</span>`;
+  $('filledList').innerHTML = filled.length
+    ? filled.map((employee) => `<article class="person filled"><strong>${employee.name}</strong><small>${filledByEmployee[employee.id].join(', ')}</small></article>`).join('')
+    : '<p class="empty-state">Пока никто не заполнил.</p>';
+  $('missingList').innerHTML = missing.length
+    ? missing.map((employee) => `<article class="person missing"><strong>${employee.name}</strong></article>`).join('')
+    : '<p class="empty-state">Все сотрудники заполнили.</p>';
 }
 
 async function drawWinner() {
@@ -163,11 +205,12 @@ function openTab(tabName) {
   $(`${tabName}Panel`).classList.add('active');
 }
 
-function requestRoulettePassword() {
+function requestRoulettePassword(tabName = 'randomizer') {
+  state.pendingProtectedTab = tabName;
   $('rouletteLock').hidden = false;
   $('passwordInput').value = '';
   $('passwordInput').focus();
-  showToast('Для доступа к рандомайзеру введите пароль.');
+  showToast('Для доступа к закрытому разделу введите пароль.');
 }
 
 function unlockRoulette(event) {
@@ -179,19 +222,23 @@ function unlockRoulette(event) {
   state.rouletteUnlocked = true;
   sessionStorage.setItem('borkRouletteUnlocked', 'true');
   $('rouletteLock').hidden = true;
-  openTab('randomizer');
-  showToast('Рандомайзер открыт');
+  openTab(state.pendingProtectedTab);
+  if (state.pendingProtectedTab === 'stats') renderStats();
+  showToast('Доступ открыт');
 }
 
 function bindUi() {
   document.querySelectorAll('.tab').forEach((button) => button.addEventListener('click', () => {
-    if (button.dataset.tab === 'randomizer' && !state.rouletteUnlocked) {
-      requestRoulettePassword();
+    if (PROTECTED_TABS.includes(button.dataset.tab) && !state.rouletteUnlocked) {
+      requestRoulettePassword(button.dataset.tab);
       return;
     }
     openTab(button.dataset.tab);
+    if (button.dataset.tab === 'stats') renderStats();
   }));
   $('passwordForm').addEventListener('submit', unlockRoulette);
+  $('statsDateSelect').addEventListener('change', renderStats);
+  $('refreshStatsButton').addEventListener('click', renderStats);
   $('rouletteLock').addEventListener('click', (event) => {
     if (event.target === $('rouletteLock')) $('rouletteLock').hidden = true;
   });
@@ -208,6 +255,7 @@ async function init() {
   try {
     await loadEmployees();
     await loadDrawDates();
+    if (state.rouletteUnlocked) await renderStats();
     setStatus('Supabase подключен', 'ok');
     showToast(`Готово: сотрудники загружены (${state.employees.length}). ${todayRu()}`);
   } catch (error) {
