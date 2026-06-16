@@ -9,11 +9,9 @@
   <body>
     <main class="app-shell">
       <header class="hero">
-        <div class="brand-mark">BORK</div>
         <div class="hero-copy">
-          <p class="eyebrow">Premium phone draw</p>
-          <h1>Телефонная рулетка</h1>
-          <p class="hero-text">Сохраняйте номера по датам и выбирайте заявку с учетом победителей текущей недели.</p>
+          <h1>Лучший звонок</h1>
+          <p class="hero-text">Сохраняйте номера по датам и выбирайте заявку за выбранный день.</p>
         </div>
         <div class="status" id="connectionStatus">Подключение…</div>
       </header>
@@ -80,10 +78,17 @@
         </div>
       </section>
 
-      <footer class="footer-line">
-        <span>BORK / ROULETTE</span>
-        <span>01</span>
-      </footer>
+      <div class="roulette-lock" id="rouletteLock" hidden>
+        <div class="lock-card">
+          <p class="eyebrow">Доступ к рандомайзеру</p>
+          <h2>Введите пароль</h2>
+          <form id="passwordForm">
+            <input id="passwordInput" type="password" inputmode="numeric" autocomplete="off" placeholder="Пароль" required />
+            <button class="primary" type="submit">Открыть</button>
+          </form>
+        </div>
+      </div>
+
       <p class="toast" id="toast" role="status" aria-live="polite"></p>
     </main>
     <script type="module" src="src/app.js"></script>

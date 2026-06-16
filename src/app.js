@@ -6,6 +6,7 @@ const TABLE_ENTRIES = 'roulette_phone_entries';
 const TABLE_DRAWS = 'roulette_draws';
 const EMPLOYEES_TABLE = 'employees';
 const MONTHS = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'];
+const ROULETTE_PASSWORD = '06062025';
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   auth: { persistSession: false },
@@ -13,7 +14,7 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
 });
 
 const $ = (id) => document.getElementById(id);
-const state = { employees: [], currentWinner: null, selectedDate: new Date(), calendarMonth: new Date() };
+const state = { employees: [], currentWinner: null, selectedDate: new Date(), calendarMonth: new Date(), rouletteUnlocked: sessionStorage.getItem('borkRouletteUnlocked') === 'true' };
 
 const pad = (value) => String(value).padStart(2, '0');
 const toLocalIso = (date) => `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
@@ -22,12 +23,6 @@ const todayRu = () => toRuDate(toLocalIso(new Date()));
 const showToast = (message) => { $('toast').textContent = message; };
 const setStatus = (message, type = '') => { $('connectionStatus').textContent = message; $('connectionStatus').className = `status ${type}`; };
 
-function startOfWeek(date = new Date()) {
-  const copy = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
-  const day = copy.getUTCDay() || 7;
-  copy.setUTCDate(copy.getUTCDate() - day + 1);
-  return copy.toISOString().slice(0, 10);
-}
 
 function setSelectedDate(date) {
   state.selectedDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
@@ -111,28 +106,21 @@ async function saveEntry(event) {
 }
 
 async function drawWinner() {
+  if (!state.rouletteUnlocked) return requestRoulettePassword();
   const date = $('drawDateSelect').value;
   if (!date) return showToast('Выберите дату, где есть номера');
-  const weekStart = startOfWeek();
-  const [{ data: entries, error: entriesError }, { data: draws, error: drawsError }] = await Promise.all([
-    supabase.from(TABLE_ENTRIES).select('id,phone,entry_date,employee_id,employees(name)').eq('entry_date', date),
-    supabase.from(TABLE_DRAWS).select('winner_employee_id').gte('drawn_at', `${weekStart}T00:00:00Z`),
-  ]);
-  if (entriesError || drawsError) return showToast(`Ошибка отбора: ${(entriesError || drawsError).message}`);
+  const { data: entries, error } = await supabase
+    .from(TABLE_ENTRIES)
+    .select('id,phone,entry_date,employee_id,employees(name)')
+    .eq('entry_date', date);
+  if (error) return showToast(`Ошибка отбора: ${error.message}`);
   if (!entries?.length) return showToast('На эту дату нет номеров');
 
-  const weeklyWins = (draws || []).reduce((acc, draw) => {
-    acc[draw.winner_employee_id] = (acc[draw.winner_employee_id] || 0) + 1;
-    return acc;
-  }, {});
-  const weighted = entries.map((entry) => ({ ...entry, weight: 1 / (1 + (weeklyWins[entry.employee_id] || 0) * 8) }));
-  const total = weighted.reduce((sum, entry) => sum + entry.weight, 0);
-  let cursor = Math.random() * total;
-  const winner = weighted.find((entry) => (cursor -= entry.weight) <= 0) || weighted.at(-1);
+  const winner = entries[Math.floor(Math.random() * entries.length)];
   state.currentWinner = winner;
   $('winnerPhone').textContent = winner.phone;
   $('winnerEmployee').textContent = winner.employees?.name || 'Сотрудник не найден';
-  $('winnerChance').textContent = `Вес отбора: ${winner.weight.toFixed(3)}. Побед на неделе: ${weeklyWins[winner.employee_id] || 0}`;
+  $('winnerChance').textContent = `Отбор за дату ${toRuDate(date)}. Всего номеров: ${entries.length}`;
   $('winnerCard').hidden = false;
   $('redrawButton').disabled = false;
   $('saveDrawButton').disabled = false;
@@ -169,12 +157,44 @@ function bindCalendar() {
   });
 }
 
+function openTab(tabName) {
+  document.querySelectorAll('.tab,.panel').forEach((item) => item.classList.remove('active'));
+  document.querySelector(`[data-tab="${tabName}"]`).classList.add('active');
+  $(`${tabName}Panel`).classList.add('active');
+}
+
+function requestRoulettePassword() {
+  $('rouletteLock').hidden = false;
+  $('passwordInput').value = '';
+  $('passwordInput').focus();
+  showToast('Для доступа к рандомайзеру введите пароль.');
+}
+
+function unlockRoulette(event) {
+  event.preventDefault();
+  if ($('passwordInput').value !== ROULETTE_PASSWORD) {
+    showToast('Неверный пароль');
+    return;
+  }
+  state.rouletteUnlocked = true;
+  sessionStorage.setItem('borkRouletteUnlocked', 'true');
+  $('rouletteLock').hidden = true;
+  openTab('randomizer');
+  showToast('Рандомайзер открыт');
+}
+
 function bindUi() {
   document.querySelectorAll('.tab').forEach((button) => button.addEventListener('click', () => {
-    document.querySelectorAll('.tab,.panel').forEach((item) => item.classList.remove('active'));
-    button.classList.add('active');
-    $(`${button.dataset.tab}Panel`).classList.add('active');
+    if (button.dataset.tab === 'randomizer' && !state.rouletteUnlocked) {
+      requestRoulettePassword();
+      return;
+    }
+    openTab(button.dataset.tab);
   }));
+  $('passwordForm').addEventListener('submit', unlockRoulette);
+  $('rouletteLock').addEventListener('click', (event) => {
+    if (event.target === $('rouletteLock')) $('rouletteLock').hidden = true;
+  });
   bindCalendar();
   $('entryForm').addEventListener('submit', saveEntry);
   $('drawButton').addEventListener('click', drawWinner);
