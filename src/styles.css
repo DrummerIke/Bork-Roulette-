@@ -346,3 +346,19 @@ select option:focus {
   aspect-ratio: auto;
 }
 .calendar-day { display: grid; place-items: center; }
+
+/* Normalize randomizer typography and shared scrollbars */
+.randomizer-card .winner h2 { font-size: clamp(38px, 4.6vw, 56px); line-height: 1; letter-spacing: .01em; }
+.randomizer-card .winner p:not(.eyebrow) { font-size: clamp(16px, 1.5vw, 20px); font-weight: 700; }
+.randomizer-card .winner small { font-size: 13px; line-height: 1.45; }
+.randomizer-card .checklist-card .eyebrow { font-size: 12px; }
+.randomizer-card .checklist-item { font-size: clamp(14px, 1.15vw, 16px); line-height: 1.28; padding: 9px 11px; }
+.randomizer-card .checklist-item input { width: 21px; height: 21px; min-height: 21px; transform: none; }
+.tooltip { font-size: 14px; font-weight: 700; line-height: 1.6; }
+
+* { scrollbar-width: thin; scrollbar-color: rgba(239, 111, 46, .72) rgba(255, 255, 255, .06); }
+*::-webkit-scrollbar { width: 10px; height: 10px; }
+*::-webkit-scrollbar-track { background: rgba(255, 255, 255, .055); border-radius: var(--r-pill); }
+*::-webkit-scrollbar-thumb { background: linear-gradient(180deg, var(--accent), var(--accent-2)); border: 2px solid rgba(67, 57, 54, .92); border-radius: var(--r-pill); }
+*::-webkit-scrollbar-thumb:hover { background: #ff8342; }
+.person-list, .tooltip { scrollbar-width: thin; scrollbar-color: rgba(239, 111, 46, .85) rgba(0, 0, 0, .14); }
