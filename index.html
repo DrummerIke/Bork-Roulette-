@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Bork Roulette</title>
+    <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="src/styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="hero">
+        <div class="hero-copy">
+          <h1>Лучший звонок</h1>
+          <p class="hero-text">Сохраняйте номера по датам и выбирайте заявку за выбранный день.</p>
+        </div>
+        <div class="status" id="connectionStatus">Подключение…</div>
+      </header>
+
+      <nav class="tabs" aria-label="Разделы">
+        <button class="tab active" type="button" data-tab="entry">Форма</button>
+        <button class="tab" type="button" data-tab="randomizer">Рандомайзер</button>
+        <button class="tab" type="button" data-tab="stats">Статистика</button>
+      </nav>
+
+      <section class="panel active" id="entryPanel" aria-labelledby="entryTab">
+        <form class="card form-grid" id="entryForm">
+          <label>
+            <span>Сотрудник</span>
+            <select id="employeeSelect" required>
+              <option value="">Загрузка сотрудников…</option>
+            </select>
+          </label>
+          <label>
+            <span>Телефон</span>
+            <input id="phoneInput" type="tel" inputmode="tel" placeholder="+7 999 123-45-67" required />
+          </label>
+          <label class="date-field">
+            <span>Дата</span>
+            <button class="date-trigger" id="dateTrigger" type="button" aria-haspopup="dialog" aria-expanded="false">
+              <span id="dateInput">—</span>
+              <span class="date-icon" aria-hidden="true">⌄</span>
+            </button>
+            <input id="dateIsoInput" type="hidden" required />
+            <div class="calendar" id="calendar" role="dialog" aria-label="Выбор даты" hidden>
+              <div class="calendar-head">
+                <button type="button" class="calendar-nav" id="prevMonth" aria-label="Предыдущий месяц">‹</button>
+                <strong id="calendarTitle">—</strong>
+                <button type="button" class="calendar-nav" id="nextMonth" aria-label="Следующий месяц">›</button>
+              </div>
+              <div class="calendar-weekdays" aria-hidden="true">
+                <span>ПН</span><span>ВТ</span><span>СР</span><span>ЧТ</span><span>ПТ</span><span>СБ</span><span>ВС</span>
+              </div>
+              <div class="calendar-grid" id="calendarGrid"></div>
+            </div>
+          </label>
+          <button class="primary" type="submit">Сохранить</button>
+        </form>
+      </section>
+
+      <section class="panel" id="randomizerPanel" aria-labelledby="randomizerTab">
+        <div class="card randomizer-card">
+          <label>
+            <span>Дата отбора</span>
+            <select id="drawDateSelect">
+              <option value="">Загрузка дат…</option>
+            </select>
+          </label>
+          <div class="actions">
+            <button class="primary" type="button" id="drawButton">Отобрать</button>
+            <button type="button" id="redrawButton" disabled>Отобрать еще раз</button>
+            <button type="button" id="saveDrawButton" disabled>Сохранить</button>
+          </div>
+          <div class="draw-workspace" id="drawWorkspace" hidden>
+            <article class="winner" id="winnerCard">
+              <p class="eyebrow">Выбранный номер</p>
+              <h2 id="winnerPhone">—</h2>
+              <p id="winnerEmployee">—</p>
+              <small id="winnerChance">—</small>
+            </article>
+            <aside class="checklist-card" aria-label="Чек-лист прослушивания">
+              <p class="eyebrow">Критерии диалога</p>
+              <div class="checklist" id="dialogChecklist"></div>
+            </aside>
+          </div>
+        </div>
+      </section>
+
+
+      <section class="panel" id="statsPanel" aria-labelledby="statsTab">
+        <div class="card stats-card">
+          <div class="stats-head">
+            <label>
+              <span>День статистики</span>
+              <select id="statsDateSelect">
+                <option value="">Загрузка дат…</option>
+              </select>
+            </label>
+            <button type="button" id="refreshStatsButton">Обновить</button>
+          </div>
+          <div class="stats-summary" id="statsSummary">
+            <span>Заполнили: —</span>
+            <span>Не заполнили: —</span>
+          </div>
+          <div class="stats-columns">
+            <section>
+              <h2>Заполнили</h2>
+              <div class="person-list" id="filledList"></div>
+            </section>
+            <section>
+              <h2>Не заполнили</h2>
+              <div class="person-list" id="missingList"></div>
+            </section>
+          </div>
+
+          <section class="results-section">
+            <div class="stats-head">
+              <label>
+                <span>Результаты отборов</span>
+                <select id="resultDateSelect">
+                  <option value="">Загрузка результатов…</option>
+                </select>
+              </label>
+              <button type="button" id="refreshResultsButton">Обновить</button>
+            </div>
+            <div class="results-list" id="drawResultsList"></div>
+          </section>
+        </div>
+      </section>
+
+      <div class="roulette-lock" id="rouletteLock" hidden>
+        <div class="lock-card">
+          <p class="eyebrow">Доступ к закрытому разделу</p>
+          <h2>Введите пароль</h2>
+          <form id="passwordForm">
+            <input id="passwordInput" type="password" inputmode="numeric" autocomplete="off" placeholder="Пароль" required />
+            <button class="primary" type="submit">Открыть</button>
+          </form>
+        </div>
+      </div>
+
+      <p class="toast" id="toast" role="status" aria-live="polite"></p>
+    </main>
+    <script type="module" src="src/app.js"></script>
+  </body>
+</html>
