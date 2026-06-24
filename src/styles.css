@@ -196,3 +196,121 @@ input:focus, select:focus, .date-trigger:focus { border-color: var(--amber); box
 .checklist-item:nth-child(even) { background: rgba(196, 106, 45, .105); }
 .checklist-item:nth-child(odd) { background: rgba(5, 5, 5, .30); }
 .checklist-item:hover { border-color: rgba(240, 163, 90, .58); background: rgba(196, 106, 45, .16); }
+
+/* BORK shared block visual system */
+:root {
+  --bg: transparent;
+  --panel: #4b403d;
+  --panel-2: #433936;
+  --panel-3: #372f2d;
+  --text: #ffffff;
+  --muted: rgba(255, 255, 255, 0.68);
+  --muted-2: rgba(255, 255, 255, 0.54);
+  --muted-3: rgba(255, 255, 255, 0.40);
+  --border: rgba(255, 255, 255, 0.11);
+  --border-soft: rgba(255, 255, 255, 0.08);
+  --accent: #ef6f2e;
+  --accent-2: #dd6226;
+  --accent-soft: rgba(239, 111, 46, 0.16);
+  --r-card: 20px;
+  --r-row: 15px;
+  --r-pill: 999px;
+  --shadow-card: 0 14px 28px rgba(0, 0, 0, 0.30), 0 3px 10px rgba(0, 0, 0, 0.18);
+  --shadow-accent: 0 12px 26px rgba(239, 111, 46, 0.22);
+  --inset-top: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  --tr: 180ms ease;
+
+  --deep-black: var(--panel-3);
+  --graphite: var(--panel-2);
+  --charcoal: var(--panel);
+  --copper: var(--accent);
+  --amber: #ffcfb0;
+  --white: var(--text);
+  --silver: var(--muted);
+  --bronze: var(--muted-3);
+  --line: var(--border);
+  --glow: rgba(239, 111, 46, 0.18);
+  font-family: "Nunito", system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+}
+
+html, body { background: var(--bg) !important; color: var(--text); font-family: "Nunito", system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif; }
+body { letter-spacing: 0; }
+.app-shell { width: min(1180px, calc(100vw - 32px)); padding: 18px 0 24px; }
+
+.hero, .card, .tabs, .calendar, .lock-card {
+  border: 1px solid var(--border);
+  border-radius: var(--r-card);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.025), rgba(255, 255, 255, 0)),
+    linear-gradient(180deg, var(--panel), var(--panel-2));
+  box-shadow: var(--shadow-card), var(--inset-top);
+  backdrop-filter: none;
+}
+
+.hero { padding: 22px 24px; overflow: hidden; }
+.hero::after { display: none; }
+h1 { font-size: clamp(28px, 4vw, 44px); font-weight: 800; line-height: 1.08; letter-spacing: .01em; text-transform: none; }
+.hero-text { margin-top: 8px; color: var(--muted-2); font-weight: 700; line-height: 1.45; }
+.eyebrow { color: var(--accent); font-weight: 800; letter-spacing: .08em; }
+.status { border-color: var(--border-soft); background: rgba(255,255,255,.03); color: var(--muted-2); font-weight: 800; text-transform: none; letter-spacing: .01em; }
+.status.ok { color: #ffd0b3; border-color: rgba(239, 111, 46, 0.35); }
+
+.tabs { padding: 6px; gap: 8px; border-radius: var(--r-pill); background: rgba(255,255,255,.03); box-shadow: none; }
+.tab, button {
+  min-height: 46px;
+  border: 1px solid rgba(239, 111, 46, 0.48);
+  border-radius: var(--r-pill);
+  background: linear-gradient(180deg, rgba(255,255,255,.03), rgba(255,255,255,0)), rgba(0,0,0,.08);
+  color: var(--accent);
+  font-weight: 800;
+  transition: transform var(--tr), box-shadow var(--tr), background var(--tr), border-color var(--tr), color var(--tr);
+}
+.tab { color: var(--muted-2); text-transform: none; font-size: 14px; letter-spacing: .01em; }
+.tab.active, .primary {
+  border-color: rgba(255,255,255,.04);
+  color: #fff;
+  background: radial-gradient(circle at 50% 0%, rgba(255,255,255,.14), rgba(255,255,255,0) 38%), linear-gradient(180deg, var(--accent), var(--accent-2));
+  box-shadow: var(--shadow-accent), inset 0 1px 0 rgba(255,255,255,.12);
+}
+button:hover:not(:disabled) { transform: translateY(-1px); border-color: rgba(239, 111, 46, .75); }
+
+.card { padding: 18px; }
+label { color: var(--muted-3); font-size: 12px; font-weight: 800; letter-spacing: .04em; }
+input, select, .date-trigger {
+  min-height: 46px;
+  border: 1px solid rgba(255,255,255,.08);
+  border-radius: 12px;
+  background: linear-gradient(180deg, rgba(255,255,255,.02), rgba(255,255,255,0)), rgba(0,0,0,.10);
+  color: var(--text);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.03);
+}
+input:focus, select:focus, .date-trigger:focus {
+  border-color: rgba(239, 111, 46, .55);
+  box-shadow: 0 0 0 4px rgba(239, 111, 46, .08), inset 0 1px 0 rgba(255,255,255,.03);
+  background: linear-gradient(180deg, rgba(255,255,255,.03), rgba(255,255,255,0)), rgba(0,0,0,.14);
+}
+
+/* Keep calendar behavior/structure, move it into the shared palette */
+.calendar { border-radius: 16px; background: linear-gradient(180deg, var(--panel), var(--panel-2)); }
+.calendar-head strong { color: var(--text); font-weight: 800; letter-spacing: .03em; }
+.calendar-weekdays { color: var(--muted-3); font-weight: 800; }
+.calendar-day { border-color: var(--border-soft); background: rgba(0,0,0,.10); color: var(--muted); }
+.calendar-day.today { color: #ffd0b3; border-color: rgba(239,111,46,.45); background: var(--accent-soft); }
+.calendar-day.selected { color: #fff; border-color: rgba(255,255,255,.04); background: linear-gradient(180deg, var(--accent), var(--accent-2)); box-shadow: var(--shadow-accent); }
+.calendar-nav { color: var(--accent); border-radius: 12px; }
+
+.winner, .checklist-card, .stats-columns section, .result-card, .person, .stats-summary span {
+  border-color: var(--border-soft);
+  background: linear-gradient(180deg, rgba(255,255,255,.02), rgba(255,255,255,0)), rgba(0,0,0,.10);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.03);
+}
+.winner h2 { color: var(--text); font-weight: 800; }
+.winner small, .winner p:not(.eyebrow), .person small, .result-card small { color: var(--muted-2); }
+.checklist-item { border-color: var(--border-soft); background: rgba(255,255,255,.03); }
+.checklist-item:nth-child(even) { background: rgba(239,111,46,.10); }
+.checklist-item:nth-child(odd) { background: rgba(255,255,255,.025); }
+.checklist-item:hover { border-color: rgba(239,111,46,.55); background: rgba(239,111,46,.14); }
+.info-dot { border-color: rgba(239,111,46,.55); color: #ffd0b3; }
+.tooltip { border-color: rgba(255,255,255,.10); background: #372f2d; color: var(--muted); }
+.result-check.checked { border-color: rgba(239,111,46,.62); color: #ffd0b3; }
+.toast { color: #ffd0b3; font-weight: 700; }
