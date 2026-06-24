@@ -314,3 +314,21 @@ input:focus, select:focus, .date-trigger:focus {
 .tooltip { border-color: rgba(255,255,255,.10); background: #372f2d; color: var(--muted); }
 .result-check.checked { border-color: rgba(239,111,46,.62); color: #ffd0b3; }
 .toast { color: #ffd0b3; font-weight: 700; }
+
+/* High-contrast native select menu for employee picker */
+select option,
+select optgroup {
+  background: #372f2d;
+  color: #ffffff;
+  font-weight: 700;
+}
+select option:checked,
+select option:hover,
+select option:focus {
+  background: #ef6f2e;
+  color: #ffffff;
+}
+#employeeSelect,
+#employeeSelect option {
+  color: #ffffff;
+}
