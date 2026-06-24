@@ -12,11 +12,14 @@ create table if not exists public.roulette_draws (
   winner_employee_id uuid not null references public.employees(id),
   selected_phone text not null,
   source_date date not null,
+  checklist jsonb not null default '{}'::jsonb,
   drawn_at timestamptz not null default now()
 );
 
 alter table public.roulette_phone_entries enable row level security;
 alter table public.roulette_draws enable row level security;
+
+alter table public.roulette_draws add column if not exists checklist jsonb not null default '{}'::jsonb;
 
 -- Таблица employees уже существует. Для виджета нужен select через anon key.
 -- Если RLS на employees включен, эта политика откроет только чтение списка сотрудников.

@@ -8,6 +8,12 @@ const EMPLOYEES_TABLE = 'employees';
 const MONTHS = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'];
 const ROULETTE_PASSWORD = '06062025';
 const PROTECTED_TABS = ['randomizer', 'stats'];
+const CHECKLIST_ITEMS = window.BORK_CHECKLIST_ITEMS || [
+  { id: 'greeting', title: 'Приветствие', info: 'Сотрудник поздоровался, представился и задал корректный тон диалога.' },
+  { id: 'need', title: 'Выявление потребности', info: 'Сотрудник уточнил задачу клиента и зафиксировал ключевую потребность.' },
+  { id: 'solution', title: 'Решение / предложение', info: 'Сотрудник предложил релевантное решение или следующий понятный шаг.' },
+  { id: 'finish', title: 'Завершение диалога', info: 'Диалог завершен аккуратно: клиент понимает договоренности и дальнейшие действия.' },
+];
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   auth: { persistSession: false },
@@ -102,6 +108,33 @@ async function loadDrawDates() {
   fillDateSelect('statsDateSelect', dates, 'Нет дат для статистики');
 }
 
+async function loadResultDates() {
+  const { data, error } = await supabase.from(TABLE_DRAWS).select('source_date').order('source_date', { ascending: false });
+  if (error) throw error;
+  const dates = [...new Set((data || []).map((row) => row.source_date))];
+  fillDateSelect('resultDateSelect', dates, 'Нет сохраненных отборов');
+}
+
+function renderChecklist() {
+  $('dialogChecklist').innerHTML = CHECKLIST_ITEMS.map((item) => `
+    <label class="checklist-item">
+      <input type="checkbox" data-checklist-id="${item.id}" />
+      <span class="check-copy">
+        <strong>${item.title}</strong>
+        <span class="info-dot" tabindex="0" aria-label="Пояснение">i<span class="tooltip">${item.info}</span></span>
+      </span>
+    </label>
+  `).join('');
+}
+
+function getChecklistState() {
+  return CHECKLIST_ITEMS.reduce((acc, item) => {
+    const input = document.querySelector(`[data-checklist-id="${item.id}"]`);
+    acc[item.id] = { title: item.title, checked: Boolean(input?.checked) };
+    return acc;
+  }, {});
+}
+
 async function saveEntry(event) {
   event.preventDefault();
   const employeeId = $('employeeSelect').value;
@@ -163,7 +196,8 @@ async function drawWinner() {
   $('winnerPhone').textContent = winner.phone;
   $('winnerEmployee').textContent = winner.employees?.name || 'Сотрудник не найден';
   $('winnerChance').textContent = `Отбор за дату ${toRuDate(date)}. Всего номеров: ${entries.length}`;
-  $('winnerCard').hidden = false;
+  renderChecklist();
+  $('drawWorkspace').hidden = false;
   $('redrawButton').disabled = false;
   $('saveDrawButton').disabled = false;
   showToast('Кандидат отобран. Нажмите «Сохранить», чтобы зафиксировать результат.');
@@ -176,11 +210,55 @@ async function saveDraw() {
     winner_employee_id: state.currentWinner.employee_id,
     selected_phone: state.currentWinner.phone,
     source_date: state.currentWinner.entry_date,
+    checklist: getChecklistState(),
   });
   if (error) return showToast(`Ошибка сохранения отбора: ${error.message}`);
   $('saveDrawButton').disabled = true;
+  await loadResultDates();
+  await renderDrawResults();
   showToast('Результат отбора сохранен');
 }
+
+function renderChecklistResult(checklist = {}) {
+  return CHECKLIST_ITEMS.map((item) => {
+    const checked = Boolean(checklist[item.id]?.checked);
+    return `<span class="result-check ${checked ? 'checked' : ''}">${checked ? '✓' : '—'} ${item.title}</span>`;
+  }).join('');
+}
+
+async function renderDrawResults() {
+  if (!state.rouletteUnlocked) return;
+  const date = $('resultDateSelect').value;
+  if (!date) {
+    $('drawResultsList').innerHTML = '<p class="empty-state">Нет сохраненных результатов.</p>';
+    return;
+  }
+  const { data, error } = await supabase
+    .from(TABLE_DRAWS)
+    .select('selected_phone,winner_employee_id,source_date,drawn_at,checklist')
+    .eq('source_date', date)
+    .order('drawn_at', { ascending: false });
+  if (error) {
+    showToast(`Ошибка результатов: ${error.message}`);
+    return;
+  }
+  const employeeById = state.employees.reduce((acc, employee) => {
+    acc[employee.id] = employee.name;
+    return acc;
+  }, {});
+  $('drawResultsList').innerHTML = data?.length
+    ? data.map((draw) => `
+      <article class="result-card">
+        <div>
+          <strong>${draw.selected_phone}</strong>
+          <small>${employeeById[draw.winner_employee_id] || 'Сотрудник не найден'} · ${new Date(draw.drawn_at).toLocaleString('ru-RU')}</small>
+        </div>
+        <div class="result-checks">${renderChecklistResult(draw.checklist)}</div>
+      </article>
+    `).join('')
+    : '<p class="empty-state">На эту дату результатов нет.</p>';
+}
+
 
 function bindCalendar() {
   $('dateTrigger').addEventListener('click', () => toggleCalendar());
@@ -223,7 +301,7 @@ function unlockRoulette(event) {
   sessionStorage.setItem('borkRouletteUnlocked', 'true');
   $('rouletteLock').hidden = true;
   openTab(state.pendingProtectedTab);
-  if (state.pendingProtectedTab === 'stats') renderStats();
+  if (state.pendingProtectedTab === 'stats') { renderStats(); renderDrawResults(); }
   showToast('Доступ открыт');
 }
 
@@ -234,11 +312,13 @@ function bindUi() {
       return;
     }
     openTab(button.dataset.tab);
-    if (button.dataset.tab === 'stats') renderStats();
+    if (button.dataset.tab === 'stats') { renderStats(); renderDrawResults(); }
   }));
   $('passwordForm').addEventListener('submit', unlockRoulette);
   $('statsDateSelect').addEventListener('change', renderStats);
   $('refreshStatsButton').addEventListener('click', renderStats);
+  $('resultDateSelect').addEventListener('change', renderDrawResults);
+  $('refreshResultsButton').addEventListener('click', renderDrawResults);
   $('rouletteLock').addEventListener('click', (event) => {
     if (event.target === $('rouletteLock')) $('rouletteLock').hidden = true;
   });
@@ -255,7 +335,8 @@ async function init() {
   try {
     await loadEmployees();
     await loadDrawDates();
-    if (state.rouletteUnlocked) await renderStats();
+    await loadResultDates();
+    if (state.rouletteUnlocked) { await renderStats(); await renderDrawResults(); }
     setStatus('Supabase подключен', 'ok');
     showToast(`Готово: сотрудники загружены (${state.employees.length}). ${todayRu()}`);
   } catch (error) {

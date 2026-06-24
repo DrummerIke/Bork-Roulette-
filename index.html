@@ -70,12 +70,18 @@
             <button type="button" id="redrawButton" disabled>Отобрать еще раз</button>
             <button type="button" id="saveDrawButton" disabled>Сохранить</button>
           </div>
-          <article class="winner" id="winnerCard" hidden>
-            <p class="eyebrow">Выбранный номер</p>
-            <h2 id="winnerPhone">—</h2>
-            <p id="winnerEmployee">—</p>
-            <small id="winnerChance">—</small>
-          </article>
+          <div class="draw-workspace" id="drawWorkspace" hidden>
+            <article class="winner" id="winnerCard">
+              <p class="eyebrow">Выбранный номер</p>
+              <h2 id="winnerPhone">—</h2>
+              <p id="winnerEmployee">—</p>
+              <small id="winnerChance">—</small>
+            </article>
+            <aside class="checklist-card" aria-label="Чек-лист прослушивания">
+              <p class="eyebrow">Чек-лист диалога</p>
+              <div class="checklist" id="dialogChecklist"></div>
+            </aside>
+          </div>
         </div>
       </section>
 
@@ -105,6 +111,19 @@
               <div class="person-list" id="missingList"></div>
             </section>
           </div>
+
+          <section class="results-section">
+            <div class="stats-head">
+              <label>
+                <span>Результаты отборов</span>
+                <select id="resultDateSelect">
+                  <option value="">Загрузка результатов…</option>
+                </select>
+              </label>
+              <button type="button" id="refreshResultsButton">Обновить</button>
+            </div>
+            <div class="results-list" id="drawResultsList"></div>
+          </section>
         </div>
       </section>
 
