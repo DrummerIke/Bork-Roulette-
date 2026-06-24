@@ -188,3 +188,11 @@ input:focus, select:focus, .date-trigger:focus { border-color: var(--amber); box
   .draw-workspace { grid-template-columns: 1fr; }
   .randomizer-card #saveDrawButton { margin-left: 0; }
 }
+
+/* Fit long phone numbers and improve checklist row scanning */
+.winner h2 { font-size: clamp(42px, 5.4vw, 68px); letter-spacing: .02em; overflow-wrap: anywhere; word-break: break-word; }
+.checklist { gap: 8px; }
+.checklist-item { padding: 10px 12px; border: 1px solid rgba(122, 74, 42, .34); border-radius: 14px; background: rgba(255, 255, 255, .035); }
+.checklist-item:nth-child(even) { background: rgba(196, 106, 45, .105); }
+.checklist-item:nth-child(odd) { background: rgba(5, 5, 5, .30); }
+.checklist-item:hover { border-color: rgba(240, 163, 90, .58); background: rgba(196, 106, 45, .16); }
