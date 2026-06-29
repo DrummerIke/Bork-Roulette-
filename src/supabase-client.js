@@ -62,14 +62,25 @@ class QueryBuilder {
   async execute() {
     const query = this.params.toString();
     const endpoint = `${this.baseUrl}/${this.table}${query ? `?${query}` : ''}`;
-    const response = await fetch(endpoint, {
-      method: this.method,
-      headers: {
-        ...this.headers,
-        ...(this.payload ? { 'Content-Type': 'application/json', Prefer: 'return=representation' } : {}),
-      },
-      body: this.payload ? JSON.stringify(this.payload) : undefined,
-    });
+    let response;
+    try {
+      response = await fetch(endpoint, {
+        method: this.method,
+        headers: {
+          ...this.headers,
+          ...(this.payload ? { 'Content-Type': 'application/json', Prefer: 'return=representation' } : {}),
+        },
+        body: this.payload ? JSON.stringify(this.payload) : undefined,
+      });
+    } catch (error) {
+      return {
+        data: null,
+        error: {
+          message: `Не удалось подключиться к Supabase REST (${new URL(endpoint).host}): ${error.message}`,
+          details: error,
+        },
+      };
+    }
 
     const text = await response.text();
     const data = text ? JSON.parse(text) : null;
