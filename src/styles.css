@@ -230,10 +230,10 @@ input:focus, select:focus, .date-trigger:focus { border-color: var(--amber); box
   --bronze: var(--muted-3);
   --line: var(--border);
   --glow: rgba(239, 111, 46, 0.18);
-  font-family: "Nunito", system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  font-family: "Nunito Medium", "Nunito", system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
 }
 
-html, body { background: var(--bg) !important; color: var(--text); font-family: "Nunito", system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif; }
+html, body { background: var(--bg) !important; color: var(--text); font-family: "Nunito Medium", "Nunito", system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif; }
 body { letter-spacing: 0; }
 .app-shell { width: min(1180px, calc(100vw - 32px)); padding: 18px 0 24px; }
 
@@ -369,4 +369,20 @@ select option:focus {
 .tooltip { font-size: 16px; line-height: 1.65; font-weight: 800; width: min(640px, calc(100vw - 96px)); padding: 16px 18px; }
 @media (max-width: 820px) {
   .tooltip { width: min(640px, calc(100vw - 80px)); }
+}
+
+/* Restore Nunito Medium and keep info tooltips inside viewport */
+html, body, button, input, select, textarea { font-family: "Nunito Medium", "Nunito", system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif; font-weight: 500; }
+h1, .title, .section-title { font-weight: 700; }
+label, .tab, button, .status, .eyebrow, .stats-summary, .check-copy strong, .person strong { font-weight: 600; }
+.winner h2 { font-weight: 700; }
+.tooltip {
+  position: fixed;
+  left: var(--tooltip-left, 12px);
+  top: var(--tooltip-top, 12px);
+  right: auto;
+  bottom: auto;
+  z-index: 1000;
+  max-width: calc(100vw - 24px);
+  font-weight: 500;
 }

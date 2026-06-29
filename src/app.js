@@ -212,6 +212,33 @@ function renderChecklist() {
       </span>
     </label>
   `).join('');
+  bindTooltipPositioning();
+}
+
+function bindTooltipPositioning() {
+  document.querySelectorAll('.info-dot').forEach((dot) => {
+    const placeTooltip = () => {
+      const tooltip = dot.querySelector('.tooltip');
+      if (!tooltip) return;
+      const dotRect = dot.getBoundingClientRect();
+      const tooltipRect = tooltip.getBoundingClientRect();
+      const margin = 12;
+      const width = Math.min(tooltipRect.width || 640, window.innerWidth - margin * 2);
+      const height = tooltipRect.height || 180;
+      const hasSpaceBelow = dotRect.bottom + height + margin <= window.innerHeight;
+      const top = hasSpaceBelow
+        ? dotRect.bottom + 8
+        : Math.max(margin, dotRect.top - height - 8);
+      const left = Math.min(
+        Math.max(margin, dotRect.right - width),
+        window.innerWidth - width - margin,
+      );
+      tooltip.style.setProperty('--tooltip-top', `${top}px`);
+      tooltip.style.setProperty('--tooltip-left', `${left}px`);
+    };
+    dot.addEventListener('mouseenter', placeTooltip);
+    dot.addEventListener('focus', placeTooltip);
+  });
 }
 
 function getChecklistState() {
