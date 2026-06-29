@@ -84,6 +84,21 @@ const todayRu = () => toRuDate(toLocalIso(new Date()));
 const showToast = (message) => { $('toast').textContent = message; };
 const setStatus = (message, type = '') => { $('connectionStatus').textContent = message; $('connectionStatus').className = `status ${type}`; };
 
+function getRandomIndex(maxExclusive) {
+  if (maxExclusive <= 0) return 0;
+  const cryptoObject = window.crypto || window.msCrypto;
+  if (!cryptoObject?.getRandomValues) return Math.floor(Math.random() * maxExclusive);
+
+  const maxUint = 0xffffffff;
+  const limit = maxUint - (maxUint % maxExclusive);
+  const values = new Uint32Array(1);
+  do {
+    cryptoObject.getRandomValues(values);
+  } while (values[0] >= limit);
+
+  return values[0] % maxExclusive;
+}
+
 
 function setSelectedDate(date) {
   state.selectedDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
@@ -310,7 +325,7 @@ async function drawWinner() {
   const eligibleEntries = (entries || []).filter((entry) => consultantIds.has(entry.employee_id));
   if (!eligibleEntries.length) return showToast('На эту дату нет номеров Personal Consultant');
 
-  const winner = eligibleEntries[Math.floor(Math.random() * eligibleEntries.length)];
+  const winner = eligibleEntries[getRandomIndex(eligibleEntries.length)];
   state.currentWinner = winner;
   $('winnerPhone').textContent = winner.phone;
   $('winnerEmployee').textContent = winner.employees?.name || 'Сотрудник не найден';
