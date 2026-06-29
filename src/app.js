@@ -325,11 +325,18 @@ async function drawWinner() {
   const eligibleEntries = (entries || []).filter((entry) => consultantIds.has(entry.employee_id));
   if (!eligibleEntries.length) return showToast('На эту дату нет номеров Personal Consultant');
 
-  const winner = eligibleEntries[getRandomIndex(eligibleEntries.length)];
+  const entriesByEmployee = eligibleEntries.reduce((acc, entry) => {
+    if (!acc.has(entry.employee_id)) acc.set(entry.employee_id, []);
+    acc.get(entry.employee_id).push(entry);
+    return acc;
+  }, new Map());
+  const employeeGroups = [...entriesByEmployee.values()];
+  const selectedEmployeeEntries = employeeGroups[getRandomIndex(employeeGroups.length)];
+  const winner = selectedEmployeeEntries[getRandomIndex(selectedEmployeeEntries.length)];
   state.currentWinner = winner;
   $('winnerPhone').textContent = winner.phone;
   $('winnerEmployee').textContent = winner.employees?.name || 'Сотрудник не найден';
-  $('winnerChance').textContent = `Отбор за ${periodDates.map(formatDateOption).join(' / ')}. Номеров Personal Consultant: ${eligibleEntries.length}`;
+  $('winnerChance').textContent = `Отбор за ${periodDates.map(formatDateOption).join(' / ')}. Сотрудников Personal Consultant: ${employeeGroups.length}. Номеров в пуле: ${eligibleEntries.length}`;
   renderChecklist();
   $('drawWorkspace').hidden = false;
   $('drawButton').disabled = true;
