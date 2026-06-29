@@ -7,6 +7,7 @@ const TABLE_DRAWS = 'roulette_draws';
 const EMPLOYEES_TABLE = 'employees';
 const DRAW_POSITION = 'Personal Consultant';
 const MONTHS = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'];
+const WEEKDAYS = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'];
 const ROULETTE_PASSWORD = '06062025';
 const PROTECTED_TABS = ['randomizer', 'stats'];
 const CHECKLIST_ITEMS = window.BORK_CHECKLIST_ITEMS || [
@@ -73,6 +74,12 @@ const state = { employees: [], currentWinner: null, selectedDate: new Date(), ca
 const pad = (value) => String(value).padStart(2, '0');
 const toLocalIso = (date) => `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 const toRuDate = (iso) => iso.split('-').reverse().join('-');
+const fromIsoDate = (iso) => {
+  const [year, month, day] = iso.split('-').map(Number);
+  return new Date(year, month - 1, day);
+};
+const toWeekday = (iso) => WEEKDAYS[fromIsoDate(iso).getDay()];
+const formatDateOption = (iso) => `${toRuDate(iso)} · ${toWeekday(iso)}`;
 const todayRu = () => toRuDate(toLocalIso(new Date()));
 const showToast = (message) => { $('toast').textContent = message; };
 const setStatus = (message, type = '') => { $('connectionStatus').textContent = message; $('connectionStatus').className = `status ${type}`; };
@@ -143,23 +150,56 @@ async function loadEntryDates() {
   return [...new Set([todayIso, ...(data || []).map((row) => row.entry_date)])];
 }
 
-function fillDateSelect(selectId, dates, emptyText) {
-  $(selectId).innerHTML = dates.length
-    ? dates.map((date) => `<option value="${date}">${toRuDate(date)}</option>`).join('')
+function fillSelect(selectId, options, emptyText) {
+  $(selectId).innerHTML = options.length
+    ? options.map((option) => `<option value="${option.value}">${option.label}</option>`).join('')
     : `<option value="">${emptyText}</option>`;
+}
+
+function getWeekendDates(iso) {
+  const date = fromIsoDate(iso);
+  const day = date.getDay();
+  const friday = new Date(date);
+  friday.setDate(date.getDate() - (day === 0 ? 2 : day - 5));
+  return [0, 1, 2].map((offset) => {
+    const next = new Date(friday);
+    next.setDate(friday.getDate() + offset);
+    return toLocalIso(next);
+  });
+}
+
+function buildDrawOptions(dates) {
+  const optionsByKey = new Map();
+  dates.forEach((date) => {
+    const day = fromIsoDate(date).getDay();
+    if ([5, 6, 0].includes(day)) {
+      const weekendDates = getWeekendDates(date);
+      const key = weekendDates.join('|');
+      optionsByKey.set(key, {
+        value: key,
+        sortDate: weekendDates[0],
+        label: `${toRuDate(weekendDates[0])} · ПТ — ${toRuDate(weekendDates[2])} · ВС`,
+      });
+      return;
+    }
+
+    optionsByKey.set(date, { value: date, sortDate: date, label: formatDateOption(date) });
+  });
+
+  return [...optionsByKey.values()].sort((a, b) => b.sortDate.localeCompare(a.sortDate));
 }
 
 async function loadDrawDates() {
   const dates = await loadEntryDates();
-  fillDateSelect('drawDateSelect', dates, 'Нет сохраненных дат');
-  fillDateSelect('statsDateSelect', dates, 'Нет дат для статистики');
+  fillSelect('drawDateSelect', buildDrawOptions(dates), 'Нет сохраненных дат');
+  fillSelect('statsDateSelect', dates.map((date) => ({ value: date, label: formatDateOption(date) })), 'Нет дат для статистики');
 }
 
 async function loadResultDates() {
   const { data, error } = await supabase.from(TABLE_DRAWS).select('source_date').order('source_date', { ascending: false });
   if (error) throw error;
   const dates = [...new Set((data || []).map((row) => row.source_date))];
-  fillDateSelect('resultDateSelect', dates, 'Нет сохраненных отборов');
+  fillSelect('resultDateSelect', dates.map((date) => ({ value: date, label: formatDateOption(date) })), 'Нет сохраненных отборов');
 }
 
 function renderChecklist() {
@@ -229,12 +269,15 @@ async function renderStats() {
 
 async function drawWinner() {
   if (!state.rouletteUnlocked) return requestRoulettePassword();
-  const date = $('drawDateSelect').value;
-  if (!date) return showToast('Выберите дату, где есть номера');
-  const { data: entries, error } = await supabase
+  const selectedPeriod = $('drawDateSelect').value;
+  if (!selectedPeriod) return showToast('Выберите дату, где есть номера');
+  const periodDates = selectedPeriod.split('|');
+  const entriesQuery = supabase
     .from(TABLE_ENTRIES)
-    .select('id,phone,entry_date,employee_id,employees(name)')
-    .eq('entry_date', date);
+    .select('id,phone,entry_date,employee_id,employees(name)');
+  const { data: entries, error } = await (periodDates.length > 1
+    ? entriesQuery.in('entry_date', periodDates)
+    : entriesQuery.eq('entry_date', periodDates[0]));
   if (error) return showToast(`Ошибка отбора: ${error.message}`);
   const consultantIds = new Set(state.employees.map((employee) => employee.id));
   const eligibleEntries = (entries || []).filter((entry) => consultantIds.has(entry.employee_id));
@@ -244,7 +287,7 @@ async function drawWinner() {
   state.currentWinner = winner;
   $('winnerPhone').textContent = winner.phone;
   $('winnerEmployee').textContent = winner.employees?.name || 'Сотрудник не найден';
-  $('winnerChance').textContent = `Отбор за дату ${toRuDate(date)}. Номеров Personal Consultant: ${eligibleEntries.length}`;
+  $('winnerChance').textContent = `Отбор за ${periodDates.map(formatDateOption).join(' / ')}. Номеров Personal Consultant: ${eligibleEntries.length}`;
   renderChecklist();
   $('drawWorkspace').hidden = false;
   $('drawButton').disabled = true;
