@@ -386,3 +386,10 @@ label, .tab, button, .status, .eyebrow, .stats-summary, .check-copy strong, .per
   max-width: calc(100vw - 24px);
   font-weight: 500;
 }
+
+/* Checklist scoring and not-applicable state */
+.check-main { display: grid; grid-template-columns: 30px minmax(0, 1fr); gap: 14px; align-items: center; min-width: 0; }
+.not-applicable { grid-column: 2; display: inline-flex; align-items: center; gap: 8px; width: max-content; margin-top: 8px; padding: 7px 10px; border: 1px solid rgba(255, 255, 255, .10); border-radius: var(--r-pill); color: var(--muted-2); background: rgba(0, 0, 0, .12); font-size: 12px; font-weight: 700; }
+.not-applicable input { width: 16px !important; height: 16px !important; min-height: 16px !important; transform: none !important; }
+.result-score { display: inline-flex; width: max-content; margin-top: 10px; padding: 7px 10px; border: 1px solid rgba(239,111,46,.50); border-radius: var(--r-pill); color: #ffd0b3; background: rgba(239,111,46,.10); font-size: 12px; font-weight: 800; }
+.result-check.not-applicable-result { border-color: rgba(255,255,255,.18); color: var(--muted-2); background: rgba(255,255,255,.035); }

@@ -219,15 +219,19 @@ async function loadResultDates() {
 
 function renderChecklist() {
   $('dialogChecklist').innerHTML = CHECKLIST_ITEMS.map((item) => `
-    <label class="checklist-item">
-      <input type="checkbox" data-checklist-id="${item.id}" />
-      <span class="check-copy">
-        <strong>${item.title}</strong>
-        <span class="info-dot" tabindex="0" aria-label="Пояснение">i<span class="tooltip">${item.info}</span></span>
-      </span>
-    </label>
+    <article class="checklist-item">
+      <label class="check-main">
+        <input type="checkbox" data-checklist-id="${item.id}" />
+        <span class="check-copy">
+          <strong>${item.title}</strong>
+          <span class="info-dot" tabindex="0" aria-label="Пояснение">i<span class="tooltip">${item.info}</span></span>
+        </span>
+      </label>
+      ${item.id === 'live_reaction' ? '<label class="not-applicable"><input type="checkbox" data-checklist-na="live_reaction" />Не применим</label>' : ''}
+    </article>
   `).join('');
   bindTooltipPositioning();
+  bindNotApplicable();
 }
 
 function bindTooltipPositioning() {
@@ -259,9 +263,22 @@ function bindTooltipPositioning() {
 function getChecklistState() {
   return CHECKLIST_ITEMS.reduce((acc, item) => {
     const input = document.querySelector(`[data-checklist-id="${item.id}"]`);
-    acc[item.id] = { title: item.title, checked: Boolean(input?.checked) };
+    const notApplicableInput = document.querySelector(`[data-checklist-na="${item.id}"]`);
+    const notApplicable = Boolean(notApplicableInput?.checked);
+    acc[item.id] = { title: item.title, checked: !notApplicable && Boolean(input?.checked), notApplicable };
     return acc;
   }, {});
+}
+
+function bindNotApplicable() {
+  document.querySelectorAll('[data-checklist-na]').forEach((input) => {
+    input.addEventListener('change', () => {
+      const target = document.querySelector(`[data-checklist-id="${input.dataset.checklistNa}"]`);
+      if (!target) return;
+      target.disabled = input.checked;
+      if (input.checked) target.checked = false;
+    });
+  });
 }
 
 async function saveEntry(event) {
@@ -363,9 +380,22 @@ async function saveDraw() {
 
 function renderChecklistResult(checklist = {}) {
   return CHECKLIST_ITEMS.map((item) => {
-    const checked = Boolean(checklist[item.id]?.checked);
-    return `<span class="result-check ${checked ? 'checked' : ''}">${checked ? '✓' : '—'} ${item.title}</span>`;
+    const result = checklist[item.id] || {};
+    const checked = Boolean(result.checked);
+    const notApplicable = Boolean(result.notApplicable);
+    const marker = notApplicable ? 'Н/П' : (checked ? '✓' : '—');
+    return `<span class="result-check ${checked ? 'checked' : ''} ${notApplicable ? 'not-applicable-result' : ''}">${marker} ${item.title}</span>`;
   }).join('');
+}
+
+function getChecklistScore(checklist = {}) {
+  return CHECKLIST_ITEMS.reduce((score, item) => {
+    const result = checklist[item.id] || {};
+    if (result.notApplicable) return score;
+    score.total += 1;
+    if (result.checked) score.checked += 1;
+    return score;
+  }, { checked: 0, total: 0 });
 }
 
 async function renderDrawResults() {
@@ -389,15 +419,19 @@ async function renderDrawResults() {
     return acc;
   }, {});
   $('drawResultsList').innerHTML = data?.length
-    ? data.map((draw) => `
+    ? data.map((draw) => {
+      const score = getChecklistScore(draw.checklist);
+      return `
       <article class="result-card">
         <div>
           <strong>${draw.selected_phone}</strong>
           <small>${employeeById[draw.winner_employee_id] || 'Сотрудник не найден'} · ${new Date(draw.drawn_at).toLocaleString('ru-RU')}</small>
+          <span class="result-score">Присутствует: ${score.checked} из ${score.total}</span>
         </div>
         <div class="result-checks">${renderChecklistResult(draw.checklist)}</div>
       </article>
-    `).join('')
+    `;
+    }).join('')
     : '<p class="empty-state">На эту дату результатов нет.</p>';
 }
 
