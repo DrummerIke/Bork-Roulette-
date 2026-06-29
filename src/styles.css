@@ -393,3 +393,11 @@ label, .tab, button, .status, .eyebrow, .stats-summary, .check-copy strong, .per
 .not-applicable input { width: 16px !important; height: 16px !important; min-height: 16px !important; transform: none !important; }
 .result-score { display: inline-flex; width: max-content; margin-top: 10px; padding: 7px 10px; border: 1px solid rgba(239,111,46,.50); border-radius: var(--r-pill); color: #ffd0b3; background: rgba(239,111,46,.10); font-size: 12px; font-weight: 800; }
 .result-check.not-applicable-result { border-color: rgba(255,255,255,.18); color: var(--muted-2); background: rgba(255,255,255,.035); }
+
+/* Keep checklist rows full-width after adding the not-applicable control */
+.checklist-item { grid-template-columns: 1fr; align-items: stretch; }
+.check-main { grid-column: 1 / -1; width: 100%; }
+.not-applicable { grid-column: 1 / -1; margin-left: 44px; }
+@media (max-width: 640px) {
+  .not-applicable { margin-left: 0; }
+}
