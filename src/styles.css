@@ -497,3 +497,10 @@ label, .tab, button, .status, .eyebrow, .stats-summary, .check-copy strong, .per
     line-height: 1.35;
   }
 }
+
+/* Tooltip comments should remain sentence case for readability */
+.tooltip {
+  text-transform: none;
+  letter-spacing: normal;
+  color: rgba(255, 255, 255, .82);
+}
