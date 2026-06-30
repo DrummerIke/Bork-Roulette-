@@ -401,3 +401,99 @@ label, .tab, button, .status, .eyebrow, .stats-summary, .check-copy strong, .per
 @media (max-width: 640px) {
   .not-applicable { margin-left: 0; }
 }
+
+/* Mobile: prioritize the public entry form; protected desktop sections are hidden */
+@media (max-width: 700px) {
+  .app-shell {
+    width: min(100%, calc(100vw - 20px));
+    padding: 10px 0 18px;
+  }
+
+  .hero {
+    grid-template-columns: 1fr;
+    gap: 14px;
+    padding: 18px;
+    border-radius: 18px;
+  }
+
+  .hero::after {
+    width: 220px;
+    height: 220px;
+    right: -90px;
+    top: -110px;
+  }
+
+  h1 {
+    font-size: clamp(28px, 11vw, 42px);
+    line-height: 1.04;
+    letter-spacing: .015em;
+  }
+
+  .hero-text {
+    margin-top: 10px;
+    font-size: 15px;
+    line-height: 1.42;
+  }
+
+  .status {
+    width: 100%;
+    white-space: normal;
+    text-align: center;
+    font-size: 11px;
+    line-height: 1.25;
+  }
+
+  .tabs,
+  #randomizerPanel,
+  #statsPanel,
+  .roulette-lock {
+    display: none !important;
+  }
+
+  #entryPanel {
+    display: block !important;
+  }
+
+  .card {
+    margin-top: 14px;
+    padding: 16px;
+    border-radius: 18px;
+  }
+
+  .form-grid {
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+
+  label {
+    gap: 7px;
+    font-size: 12px;
+    letter-spacing: .045em;
+  }
+
+  input,
+  select,
+  .date-trigger,
+  .form-grid .primary {
+    min-height: 52px;
+    border-radius: 14px;
+    font-size: 15px;
+  }
+
+  .form-grid .primary {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .calendar {
+    left: 50%;
+    transform: translateX(-50%);
+    width: min(320px, calc(100vw - 36px));
+  }
+
+  .toast {
+    margin-top: 10px;
+    font-size: 13px;
+    line-height: 1.35;
+  }
+}
