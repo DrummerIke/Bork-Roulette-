@@ -55,6 +55,12 @@ class QueryBuilder {
     return this.execute();
   }
 
+  update(payload) {
+    this.method = 'PATCH';
+    this.payload = payload;
+    return this.execute();
+  }
+
   then(resolve, reject) {
     return this.execute().then(resolve, reject);
   }

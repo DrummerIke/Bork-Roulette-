@@ -69,7 +69,7 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
 });
 
 const $ = (id) => document.getElementById(id);
-const state = { employees: [], currentWinner: null, selectedDate: new Date(), calendarMonth: new Date(), rouletteUnlocked: sessionStorage.getItem('borkRouletteUnlocked') === 'true', pendingProtectedTab: 'randomizer' };
+const state = { employees: [], currentWinner: null, selectedDate: new Date(), calendarMonth: new Date(), rouletteUnlocked: sessionStorage.getItem('borkRouletteUnlocked') === 'true', pendingProtectedTab: 'randomizer', savePopupTimer: null };
 
 const pad = (value) => String(value).padStart(2, '0');
 const toLocalIso = (date) => `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
@@ -86,6 +86,17 @@ const showToast = (message, type = '') => {
   $('toast').className = `toast ${type}`;
 };
 const setStatus = (message, type = '') => { $('connectionStatus').textContent = message; $('connectionStatus').className = `status ${type}`; };
+
+function showSavePopup(message, type = 'success') {
+  const popup = $('savePopup');
+  popup.textContent = message;
+  popup.className = `save-popup ${type}`;
+  popup.hidden = false;
+  clearTimeout(state.savePopupTimer);
+  state.savePopupTimer = setTimeout(() => {
+    popup.hidden = true;
+  }, 3200);
+}
 
 function getRandomIndex(maxExclusive) {
   if (maxExclusive <= 0) return 0;
@@ -284,6 +295,26 @@ function bindNotApplicable() {
   });
 }
 
+function requestDuplicateAction(existingEntries, entryDate) {
+  return new Promise((resolve) => {
+    const dialog = $('duplicateDialog');
+    const summary = $('duplicateSummary');
+    const firstPhone = existingEntries[0]?.phone || 'номер уже внесен';
+    summary.textContent = `На ${toRuDate(entryDate)} уже есть запись: ${firstPhone}. Что сделать с новым номером?`;
+
+    const buttons = [...dialog.querySelectorAll('[data-duplicate-action]')];
+    const finish = (action) => {
+      buttons.forEach((button) => button.removeEventListener('click', onClick));
+      dialog.hidden = true;
+      resolve(action);
+    };
+    const onClick = (event) => finish(event.currentTarget.dataset.duplicateAction);
+
+    buttons.forEach((button) => button.addEventListener('click', onClick));
+    dialog.hidden = false;
+  });
+}
+
 async function saveEntry(event) {
   event.preventDefault();
   const employeeId = $('employeeSelect').value;
@@ -298,25 +329,31 @@ async function saveEntry(event) {
   try {
     const { data: existingEntries, error: duplicateError } = await supabase
       .from(TABLE_ENTRIES)
-      .select('id,phone')
+      .select('id,phone,created_at')
       .eq('employee_id', employeeId)
-      .eq('entry_date', entryDate);
+      .eq('entry_date', entryDate)
+      .order('created_at', { ascending: false });
     if (duplicateError) return showToast(`Ошибка проверки дубля: ${duplicateError.message}`, 'error');
 
+    let saveAction = 'append';
     if (existingEntries?.length) {
-      const shouldSaveAgain = window.confirm('Ваш номер уже внесен на эту дату. Внести второй раз?');
-      if (!shouldSaveAgain) {
-        showToast('Ваш номер уже внесен на эту дату. Повторная запись отменена.', 'warning');
+      saveAction = await requestDuplicateAction(existingEntries, entryDate);
+      if (saveAction === 'cancel') {
+        showToast('Ваш номер уже внесен на эту дату. Сохранение отменено.', 'warning');
         return;
       }
     }
 
-    const { error } = await supabase.from(TABLE_ENTRIES).insert({ employee_id: employeeId, phone, entry_date: entryDate });
+    const { error } = saveAction === 'overwrite'
+      ? await supabase.from(TABLE_ENTRIES).eq('id', existingEntries[0].id).update({ phone })
+      : await supabase.from(TABLE_ENTRIES).insert({ employee_id: employeeId, phone, entry_date: entryDate });
     if (error) return showToast(`Ошибка сохранения: ${error.message}`, 'error');
     $('phoneInput').value = '';
     document.querySelector('#entryPanel .card')?.classList.add('save-success');
     setTimeout(() => document.querySelector('#entryPanel .card')?.classList.remove('save-success'), 1800);
-    showToast(`✅ Номер сохранен: ${phone} · ${toRuDate(entryDate)}`, 'success');
+    const resultText = saveAction === 'overwrite' ? '✅ Номер перезаписан' : '✅ Номер сохранен';
+    showToast(`${resultText}: ${phone} · ${toRuDate(entryDate)}`, 'success');
+    showSavePopup(`${resultText}: ${phone}`);
     await loadDrawDates();
     await renderStats();
   } finally {

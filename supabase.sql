@@ -37,6 +37,10 @@ begin
     create policy "roulette entries public insert" on public.roulette_phone_entries for insert with check (true);
   end if;
 
+  if not exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'roulette_phone_entries' and policyname = 'roulette entries public update') then
+    create policy "roulette entries public update" on public.roulette_phone_entries for update using (true) with check (true);
+  end if;
+
   if not exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'roulette_draws' and policyname = 'roulette draws public read') then
     create policy "roulette draws public read" on public.roulette_draws for select using (true);
   end if;

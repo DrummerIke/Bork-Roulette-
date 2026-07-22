@@ -138,6 +138,20 @@
         </div>
       </div>
 
+      <div class="entry-choice" id="duplicateDialog" role="dialog" aria-modal="true" aria-labelledby="duplicateTitle" hidden>
+        <div class="entry-choice-card">
+          <p class="eyebrow">Повторная запись</p>
+          <h2 id="duplicateTitle">Номер уже внесен</h2>
+          <p id="duplicateSummary">Выберите действие для этой даты.</p>
+          <div class="entry-choice-actions">
+            <button class="primary" type="button" data-duplicate-action="overwrite">Перезаписать</button>
+            <button type="button" data-duplicate-action="append">Внести дополнительно</button>
+            <button type="button" data-duplicate-action="cancel">Отмена</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="save-popup" id="savePopup" role="status" aria-live="polite" hidden></div>
       <p class="toast" id="toast" role="status" aria-live="polite"></p>
     </main>
     <script type="module" src="src/app.js"></script>

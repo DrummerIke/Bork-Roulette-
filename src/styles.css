@@ -536,3 +536,66 @@ label, .tab, button, .status, .eyebrow, .stats-summary, .check-copy strong, .per
     var(--shadow-card),
     var(--inset-top);
 }
+
+/* Save popup and duplicate-entry choice dialog */
+.save-popup {
+  position: fixed;
+  left: 50%;
+  top: 22px;
+  z-index: 60;
+  transform: translateX(-50%);
+  width: min(520px, calc(100vw - 28px));
+  padding: 15px 18px;
+  border: 1px solid rgba(239, 111, 46, .70);
+  border-radius: 18px;
+  color: #fff4e8;
+  background: linear-gradient(180deg, rgba(239,111,46,.24), rgba(67,57,54,.96));
+  box-shadow: 0 18px 44px rgba(0, 0, 0, .36), 0 0 0 4px rgba(239,111,46,.10);
+  text-align: center;
+  font-size: 16px;
+  font-weight: 800;
+}
+.save-popup[hidden] { display: none; }
+.entry-choice {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: rgba(5, 5, 5, .58);
+  backdrop-filter: blur(10px);
+}
+.entry-choice[hidden] { display: none; }
+.entry-choice-card {
+  width: min(520px, 100%);
+  border: 1px solid rgba(239, 111, 46, .46);
+  border-radius: 22px;
+  padding: 22px;
+  background:
+    linear-gradient(180deg, rgba(255,255,255,.035), rgba(255,255,255,0)),
+    linear-gradient(180deg, var(--panel), var(--panel-2));
+  box-shadow: var(--shadow-card), var(--inset-top);
+}
+.entry-choice-card h2 {
+  margin: 0 0 10px;
+  color: #fff;
+  font-size: 24px;
+  line-height: 1.1;
+}
+.entry-choice-card p:not(.eyebrow) {
+  margin: 0 0 18px;
+  color: var(--muted);
+  line-height: 1.45;
+}
+.entry-choice-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+}
+@media (max-width: 700px) {
+  .save-popup { top: 12px; font-size: 14px; }
+  .entry-choice-actions { flex-direction: column; }
+  .entry-choice-actions button { width: 100%; }
+}
