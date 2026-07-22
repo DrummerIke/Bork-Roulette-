@@ -81,7 +81,10 @@ const fromIsoDate = (iso) => {
 const toWeekday = (iso) => WEEKDAYS[fromIsoDate(iso).getDay()];
 const formatDateOption = (iso) => `${toRuDate(iso)} · ${toWeekday(iso)}`;
 const todayRu = () => toRuDate(toLocalIso(new Date()));
-const showToast = (message) => { $('toast').textContent = message; };
+const showToast = (message, type = '') => {
+  $('toast').textContent = message;
+  $('toast').className = `toast ${type}`;
+};
 const setStatus = (message, type = '') => { $('connectionStatus').textContent = message; $('connectionStatus').className = `status ${type}`; };
 
 function getRandomIndex(maxExclusive) {
@@ -286,14 +289,39 @@ async function saveEntry(event) {
   const employeeId = $('employeeSelect').value;
   const phone = $('phoneInput').value.trim();
   const entryDate = $('dateIsoInput').value;
+  const submitButton = event.submitter || event.currentTarget.querySelector('button[type="submit"]');
+  if (!employeeId) return showToast('Выберите сотрудника', 'warning');
+  if (!phone) return showToast('Введите номер телефона', 'warning');
   if (!entryDate) return showToast('Выберите дату');
 
-  const { error } = await supabase.from(TABLE_ENTRIES).insert({ employee_id: employeeId, phone, entry_date: entryDate });
-  if (error) return showToast(`Ошибка сохранения: ${error.message}`);
-  $('phoneInput').value = '';
-  showToast('Номер сохранен');
-  await loadDrawDates();
-  await renderStats();
+  if (submitButton) submitButton.disabled = true;
+  try {
+    const { data: existingEntries, error: duplicateError } = await supabase
+      .from(TABLE_ENTRIES)
+      .select('id,phone')
+      .eq('employee_id', employeeId)
+      .eq('entry_date', entryDate);
+    if (duplicateError) return showToast(`Ошибка проверки дубля: ${duplicateError.message}`, 'error');
+
+    if (existingEntries?.length) {
+      const shouldSaveAgain = window.confirm('Ваш номер уже внесен на эту дату. Внести второй раз?');
+      if (!shouldSaveAgain) {
+        showToast('Ваш номер уже внесен на эту дату. Повторная запись отменена.', 'warning');
+        return;
+      }
+    }
+
+    const { error } = await supabase.from(TABLE_ENTRIES).insert({ employee_id: employeeId, phone, entry_date: entryDate });
+    if (error) return showToast(`Ошибка сохранения: ${error.message}`, 'error');
+    $('phoneInput').value = '';
+    document.querySelector('#entryPanel .card')?.classList.add('save-success');
+    setTimeout(() => document.querySelector('#entryPanel .card')?.classList.remove('save-success'), 1800);
+    showToast(`✅ Номер сохранен: ${phone} · ${toRuDate(entryDate)}`, 'success');
+    await loadDrawDates();
+    await renderStats();
+  } finally {
+    if (submitButton) submitButton.disabled = false;
+  }
 }
 
 async function renderStats() {

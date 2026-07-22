@@ -504,3 +504,35 @@ label, .tab, button, .status, .eyebrow, .stats-summary, .check-copy strong, .per
   letter-spacing: normal;
   color: rgba(255, 255, 255, .82);
 }
+
+/* Clear save/duplicate feedback for phone entry form */
+.toast.success {
+  color: #fff4e8;
+  border: 1px solid rgba(239, 111, 46, .62);
+  border-radius: var(--r-pill);
+  padding: 10px 14px;
+  background: rgba(239, 111, 46, .18);
+  box-shadow: 0 10px 26px rgba(239, 111, 46, .16);
+}
+.toast.warning {
+  color: #ffd0b3;
+  border: 1px solid rgba(240, 163, 90, .50);
+  border-radius: var(--r-pill);
+  padding: 10px 14px;
+  background: rgba(240, 163, 90, .10);
+}
+.toast.error {
+  color: #ffb6a5;
+  border: 1px solid rgba(255, 100, 70, .42);
+  border-radius: var(--r-pill);
+  padding: 10px 14px;
+  background: rgba(255, 100, 70, .10);
+}
+#entryPanel .card.save-success {
+  border-color: rgba(239, 111, 46, .95);
+  box-shadow:
+    0 16px 38px rgba(239, 111, 46, .20),
+    0 0 0 4px rgba(239, 111, 46, .10),
+    var(--shadow-card),
+    var(--inset-top);
+}
