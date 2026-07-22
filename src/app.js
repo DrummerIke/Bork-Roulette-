@@ -92,6 +92,16 @@ function showSavePopup(message, type = 'success') {
   popup.textContent = message;
   popup.className = `save-popup ${type}`;
   popup.hidden = false;
+  const phoneRect = $('phoneInput').getBoundingClientRect();
+  const popupRect = popup.getBoundingClientRect();
+  const margin = 12;
+  const left = Math.min(
+    Math.max(margin, phoneRect.left + (phoneRect.width / 2) - (popupRect.width / 2)),
+    window.innerWidth - popupRect.width - margin,
+  );
+  const top = Math.max(margin, phoneRect.top - popupRect.height - 10);
+  popup.style.setProperty('--save-popup-left', `${left}px`);
+  popup.style.setProperty('--save-popup-top', `${top}px`);
   clearTimeout(state.savePopupTimer);
   state.savePopupTimer = setTimeout(() => {
     popup.hidden = true;
