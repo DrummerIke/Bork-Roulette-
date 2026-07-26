@@ -21,6 +21,13 @@ alter table public.roulette_draws enable row level security;
 
 alter table public.roulette_draws add column if not exists checklist jsonb not null default '{}'::jsonb;
 
+-- Политики RLS не заменяют SQL-привилегии. Эти grants восстанавливают доступ
+-- браузерного anon-клиента, если его отозвали при настройке других таблиц.
+grant usage on schema public to anon, authenticated;
+grant select on table public.employees to anon, authenticated;
+grant select, insert, update on table public.roulette_phone_entries to anon, authenticated;
+grant select, insert on table public.roulette_draws to anon, authenticated;
+
 -- Таблица employees уже существует. Для виджета нужен select через anon key.
 -- Если RLS на employees включен, эта политика откроет только чтение списка сотрудников.
 do $$
@@ -49,3 +56,6 @@ begin
     create policy "roulette draws public insert" on public.roulette_draws for insert with check (true);
   end if;
 end $$;
+
+-- Обновляем schema cache PostgREST после изменения таблиц/связей в проекте.
+notify pgrst, 'reload schema';

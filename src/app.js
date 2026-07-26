@@ -69,7 +69,7 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
 });
 
 const $ = (id) => document.getElementById(id);
-const state = { employees: [], currentWinner: null, selectedDate: new Date(), calendarMonth: new Date(), rouletteUnlocked: sessionStorage.getItem('borkRouletteUnlocked') === 'true', pendingProtectedTab: 'randomizer', savePopupTimer: null };
+const state = { employees: [], allEmployees: [], currentWinner: null, selectedDate: new Date(), calendarMonth: new Date(), rouletteUnlocked: sessionStorage.getItem('borkRouletteUnlocked') === 'true', pendingProtectedTab: 'randomizer', savePopupTimer: null };
 
 const pad = (value) => String(value).padStart(2, '0');
 const toLocalIso = (date) => `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
@@ -175,9 +175,17 @@ function renderCalendar() {
 }
 
 async function loadEmployees() {
-  const { data, error } = await supabase.from(EMPLOYEES_TABLE).select('id,name,Position').eq('Position', DRAW_POSITION).order('name');
+  // Фильтруем роль на клиенте: так записи не исчезнут из-за регистра или
+  // случайных пробелов в Position, добавленных через Table Editor.
+  const { data, error } = await supabase.from(EMPLOYEES_TABLE).select('id,name,Position').order('name');
   if (error) throw error;
-  state.employees = data || [];
+  state.allEmployees = data || [];
+  const expectedPosition = DRAW_POSITION.toLocaleLowerCase('en-US');
+  state.employees = state.allEmployees.filter((employee) =>
+    String(employee.Position || '').trim().toLocaleLowerCase('en-US') === expectedPosition);
+  if (!state.employees.length) {
+    throw new Error(`В employees не найдено сотрудников с Position = "${DRAW_POSITION}"`);
+  }
   $('employeeSelect').innerHTML = '<option value="">Выберите сотрудника</option>' +
     state.employees.map((employee) => `<option value="${employee.id}">${employee.name}</option>`).join('');
 }
@@ -377,7 +385,7 @@ async function renderStats() {
   if (!date) return;
   const { data: entries, error } = await supabase
     .from(TABLE_ENTRIES)
-    .select('employee_id,phone,employees(name)')
+    .select('employee_id,phone')
     .eq('entry_date', date);
   if (error) {
     showToast(`Ошибка статистики: ${error.message}`);
@@ -408,7 +416,7 @@ async function drawWinner() {
   const periodDates = selectedPeriod.split('|');
   const entriesQuery = supabase
     .from(TABLE_ENTRIES)
-    .select('id,phone,entry_date,employee_id,employees(name)');
+    .select('id,phone,entry_date,employee_id');
   const { data: entries, error } = await (periodDates.length > 1
     ? entriesQuery.in('entry_date', periodDates)
     : entriesQuery.eq('entry_date', periodDates[0]));
@@ -427,7 +435,8 @@ async function drawWinner() {
   const winner = selectedEmployeeEntries[getRandomIndex(selectedEmployeeEntries.length)];
   state.currentWinner = winner;
   $('winnerPhone').textContent = winner.phone;
-  $('winnerEmployee').textContent = winner.employees?.name || 'Сотрудник не найден';
+  const winnerEmployee = state.allEmployees.find((employee) => employee.id === winner.employee_id);
+  $('winnerEmployee').textContent = winnerEmployee?.name || 'Сотрудник не найден';
   $('winnerChance').textContent = `Отбор за ${periodDates.map(formatDateOption).join(' / ')}. Сотрудников Personal Consultant: ${employeeGroups.length}. Номеров в пуле: ${eligibleEntries.length}`;
   renderChecklist();
   $('drawWorkspace').hidden = false;
@@ -489,7 +498,7 @@ async function renderDrawResults() {
     showToast(`Ошибка результатов: ${error.message}`);
     return;
   }
-  const employeeById = state.employees.reduce((acc, employee) => {
+  const employeeById = state.allEmployees.reduce((acc, employee) => {
     acc[employee.id] = employee.name;
     return acc;
   }, {});
@@ -583,17 +592,30 @@ function bindUi() {
 async function init() {
   setSelectedDate(new Date());
   bindUi();
-  try {
-    await loadEmployees();
-    await loadDrawDates();
-    await loadResultDates();
-    if (state.rouletteUnlocked) { await renderStats(); await renderDrawResults(); }
-    setStatus('Supabase подключен', 'ok');
-    showToast(`Готово: сотрудники загружены (${state.employees.length}). ${todayRu()}`);
-  } catch (error) {
-    setStatus('Ошибка подключения', 'error');
-    showToast(`Проверьте RLS/CORS и таблицы employees, ${TABLE_ENTRIES}, ${TABLE_DRAWS}: ${error.message}`);
+  const startupTasks = [
+    ['сотрудники', loadEmployees],
+    ['даты номеров', loadDrawDates],
+    ['результаты отборов', loadResultDates],
+  ];
+  const results = await Promise.allSettled(startupTasks.map(([, task]) => task()));
+  const failures = results
+    .map((result, index) => result.status === 'rejected'
+      ? `${startupTasks[index][0]}: ${result.reason?.message || result.reason}`
+      : null)
+    .filter(Boolean);
+
+  if (state.rouletteUnlocked && state.employees.length) {
+    await Promise.allSettled([renderStats(), renderDrawResults()]);
   }
+
+  if (failures.length) {
+    setStatus('Подключено частично', 'error');
+    showToast(`Ошибка загрузки — ${failures.join('; ')}`, 'error');
+    return;
+  }
+
+  setStatus('Supabase подключен', 'ok');
+  showToast(`Готово: сотрудники загружены (${state.employees.length}). ${todayRu()}`);
 }
 
 init();

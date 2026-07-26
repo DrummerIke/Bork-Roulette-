@@ -89,10 +89,25 @@ class QueryBuilder {
     }
 
     const text = await response.text();
-    const data = text ? JSON.parse(text) : null;
+    let data = null;
+    if (text) {
+      try {
+        data = JSON.parse(text);
+      } catch {
+        data = { message: text.slice(0, 500) };
+      }
+    }
 
     if (!response.ok) {
-      return { data: null, error: { message: data?.message || response.statusText, details: data } };
+      return {
+        data: null,
+        error: {
+          message: data?.message || `${response.status} ${response.statusText}`,
+          code: data?.code || String(response.status),
+          details: data,
+          endpoint,
+        },
+      };
     }
 
     return { data, error: null };
