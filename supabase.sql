@@ -28,6 +28,23 @@ grant select on table public.employees to anon, authenticated;
 grant select, insert, update on table public.roulette_phone_entries to anon, authenticated;
 grant select, insert on table public.roulette_draws to anon, authenticated;
 
+-- Отдельная безопасная точка чтения сотрудников. Виджет использует её как
+-- резервный путь, если прямой SELECT был отозван настройками другого проекта.
+create or replace function public.get_roulette_employees()
+returns table (id uuid, name text, "Position" text)
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select employee.id, employee.name, employee."Position"
+  from public.employees as employee
+  order by employee.name;
+$$;
+
+revoke all on function public.get_roulette_employees() from public;
+grant execute on function public.get_roulette_employees() to anon, authenticated;
+
 -- Таблица employees уже существует. Для виджета нужен select через anon key.
 -- Если RLS на employees включен, эта политика откроет только чтение списка сотрудников.
 do $$

@@ -10,6 +10,12 @@ export function createClient(url, anonKey, options = {}) {
     from(table) {
       return new QueryBuilder(baseUrl, table, baseHeaders);
     },
+    rpc(functionName, args = {}) {
+      const query = new QueryBuilder(baseUrl, `rpc/${encodeURIComponent(functionName)}`, baseHeaders);
+      query.method = 'POST';
+      query.payload = args;
+      return query;
+    },
   };
 }
 

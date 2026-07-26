@@ -177,9 +177,12 @@ function renderCalendar() {
 async function loadEmployees() {
   // Фильтруем роль на клиенте: так записи не исчезнут из-за регистра или
   // случайных пробелов в Position, добавленных через Table Editor.
-  const { data, error } = await supabase.from(EMPLOYEES_TABLE).select('id,name,Position').order('name');
+  let { data, error } = await supabase.from(EMPLOYEES_TABLE).select('id,name,Position').order('name');
+  if (error?.code === '42501' || /permission denied/i.test(error?.message || '')) {
+    ({ data, error } = await supabase.rpc('get_roulette_employees'));
+  }
   if (error) throw error;
-  state.allEmployees = data || [];
+  state.allEmployees = (data || []).sort((a, b) => a.name.localeCompare(b.name, 'ru'));
   const expectedPosition = DRAW_POSITION.toLocaleLowerCase('en-US');
   state.employees = state.allEmployees.filter((employee) =>
     String(employee.Position || '').trim().toLocaleLowerCase('en-US') === expectedPosition);
