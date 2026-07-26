@@ -176,16 +176,23 @@ function renderCalendar() {
 
 async function loadEmployees() {
   // Фильтруем роль на клиенте: так записи не исчезнут из-за регистра или
-  // случайных пробелов в Position, добавленных через Table Editor.
+  // случайных пробелов в Position, добавленных через Table Editor. Второй
+  // запрос поддерживает проекты, где столбец был переименован в position.
   let { data, error } = await supabase.from(EMPLOYEES_TABLE).select('id,name,Position').order('name');
+  if (error?.code === '42703' || error?.code === 'PGRST204') {
+    ({ data, error } = await supabase.from(EMPLOYEES_TABLE).select('id,name,position').order('name'));
+  }
   if (error?.code === '42501' || /permission denied/i.test(error?.message || '')) {
     ({ data, error } = await supabase.rpc('get_roulette_employees'));
+  }
+  if (error?.code === 'PGRST202' || /get_roulette_employees.*schema cache/i.test(error?.message || '')) {
+    throw new Error('Supabase не настроен: выполните актуальный supabase.sql в SQL Editor и обновите страницу');
   }
   if (error) throw error;
   state.allEmployees = (data || []).sort((a, b) => a.name.localeCompare(b.name, 'ru'));
   const expectedPosition = DRAW_POSITION.toLocaleLowerCase('en-US');
   state.employees = state.allEmployees.filter((employee) =>
-    String(employee.Position || '').trim().toLocaleLowerCase('en-US') === expectedPosition);
+    String(employee.Position ?? employee.position ?? employee.role ?? '').trim().toLocaleLowerCase('en-US') === expectedPosition);
   if (!state.employees.length) {
     throw new Error(`В employees не найдено сотрудников с Position = "${DRAW_POSITION}"`);
   }

@@ -37,9 +37,16 @@ stable
 security definer
 set search_path = public
 as $$
-  select employee.id, employee.name, employee."Position"
+  select
+    employee.id,
+    coalesce(to_jsonb(employee) ->> 'name', to_jsonb(employee) ->> 'full_name') as name,
+    coalesce(
+      to_jsonb(employee) ->> 'Position',
+      to_jsonb(employee) ->> 'position',
+      to_jsonb(employee) ->> 'role'
+  ) as "Position"
   from public.employees as employee
-  order by employee.name;
+  order by 2;
 $$;
 
 revoke all on function public.get_roulette_employees() from public;

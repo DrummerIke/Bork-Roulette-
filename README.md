@@ -4,8 +4,10 @@
 
 ## Настройка Supabase
 
+> **Обязательно после этого обновления:** откройте Supabase → SQL Editor, вставьте весь актуальный `supabase.sql`, нажмите **Run**, дождитесь `Success`, затем перезагрузите страницу Google Sites. Ошибка `Could not find the function public.get_roulette_employees` означает, что этот SQL ещё не был выполнен в используемом Supabase-проекте.
+
 1. Выполните SQL из `supabase.sql` в Supabase SQL Editor.
-2. Убедитесь, что таблица `public.employees` содержит поля `id uuid`, `name text` и `Position text`. Для участия в форме и отборе в `Position` должно быть значение `Personal Consultant` (регистр и случайные пробелы виджет нормализует).
+2. Убедитесь, что таблица `public.employees` содержит поля `id uuid`, `name text` и `Position text`. Также поддерживается переименованный столбец `position` или `role`; для участия в форме и отборе его значение должно быть `Personal Consultant` (регистр и случайные пробелы виджет нормализует).
 3. Виджет уже содержит текущий публичный Supabase URL как fallback. Если ключ нужно заменить, в Google Sites перед `src/app.js` задайте публичные ключи проекта:
 
 ```html
