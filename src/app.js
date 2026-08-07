@@ -435,12 +435,22 @@ async function renderStats() {
 const MISSING_COLUMN_CODES = new Set(['42703', 'PGRST204']);
 const NON_WORKING_SHIFT_VALUES = new Set([
   'off', 'day off', 'weekend', 'vacation', 'sick',
-  'выходной', 'вых', 'в', 'отпуск', 'о', 'больничный', 'б', 'не работает',
+  'выходной', 'вых', 'в', 'отпуск', 'отп', 'о', 'больничный', 'бл', 'б', 'не работает',
   '', '-', '—', '0', 'false', 'нет',
 ]);
+const NON_WORKING_SHIFT_MARKERS = [
+  'выход', 'вых', 'отпуск', 'отп.', 'больнич', 'не работ',
+  'day off', 'weekend', 'vacation', 'sick', 'absence',
+];
 
 function normalizeScheduleValue(value) {
   return String(value ?? '').trim().toLocaleLowerCase('ru');
+}
+
+function isNonWorkingScheduleValue(value) {
+  const normalized = normalizeScheduleValue(value);
+  return NON_WORKING_SHIFT_VALUES.has(normalized)
+    || NON_WORKING_SHIFT_MARKERS.some((marker) => normalized.includes(marker));
 }
 
 function normalizePersonName(value) {
@@ -482,7 +492,7 @@ function normalizeColumnMatrixShifts(rows, date) {
   const weekdayColumns = columns.filter((column) => column !== employeeColumn);
   const shiftColumn = weekdayColumns[weekDay - 1];
   const workingRows = rows
-    .filter((row) => !NON_WORKING_SHIFT_VALUES.has(normalizeScheduleValue(row[shiftColumn])))
+    .filter((row) => !isNonWorkingScheduleValue(row[shiftColumn]))
     .map((row) => {
       const employee = findEmployeeByReference(row[employeeColumn]);
       return { employee_id: employee?.id, status: row[shiftColumn] };
@@ -511,7 +521,7 @@ function normalizeWorkingShifts(rows) {
       ?? nestedEmployee?.id ?? employeeStringId ?? matchedEmployee?.id;
     const status = String(row.status ?? row.shift_type ?? row.type ?? 'working').trim().toLocaleLowerCase('ru');
     const isWorking = String(row.is_working ?? 'true').trim().toLocaleLowerCase('en-US');
-    if (employeeId && !NON_WORKING_SHIFT_VALUES.has(status) && !['false', '0', 'no'].includes(isWorking)) {
+    if (employeeId && !isNonWorkingScheduleValue(status) && !['false', '0', 'no'].includes(isWorking)) {
       ids.add(employeeId);
     }
   });

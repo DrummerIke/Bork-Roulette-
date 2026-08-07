@@ -140,9 +140,11 @@ as $$
         and shift.employee_name is not null
         and coalesce(lower(trim(shift.matrix_shift)), '') not in (
           '', '-', '—', '0', 'false', 'нет', 'off', 'day off', 'weekend',
-          'vacation', 'sick', 'выходной', 'вых', 'в', 'отпуск', 'о',
-          'больничный', 'б', 'не работает'
+          'vacation', 'sick', 'выходной', 'вых', 'в', 'отпуск', 'отп', 'о',
+          'больничный', 'бл', 'б', 'не работает'
         )
+        and coalesce(lower(trim(shift.matrix_shift)), '') !~
+          '(выход|вых|отпуск|отп\.|больнич|не работ|day off|weekend|vacation|sick|absence)'
       )
     )
     and coalesce(shift.employee_value, shift.employee_name) is not null
@@ -153,8 +155,11 @@ as $$
     and lower(shift.is_working) not in ('false', '0', 'no')
     and shift.shift_status not in (
       'off', 'day off', 'weekend', 'vacation', 'sick',
-      'выходной', 'отпуск', 'больничный', 'не работает'
-    );
+      'выходной', 'вых', 'в', 'отпуск', 'отп', 'о',
+      'больничный', 'бл', 'б', 'не работает'
+    )
+    and shift.shift_status !~
+      '(выход|вых|отпуск|отп\.|больнич|не работ|day off|weekend|vacation|sick|absence)';
 $$;
 
 revoke all on function public.get_roulette_working_employees(date) from public;
