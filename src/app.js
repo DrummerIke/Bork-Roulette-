@@ -443,14 +443,60 @@ function normalizeScheduleValue(value) {
   return String(value ?? '').trim().toLocaleLowerCase('ru');
 }
 
+function normalizePersonName(value) {
+  return String(value ?? '')
+    .toLocaleLowerCase('ru')
+    .replaceAll('ё', 'е')
+    .replace(/[^а-яa-z\s-]/gi, ' ')
+    .split(/[\s-]+/)
+    .filter(Boolean)
+    .sort()
+    .join(' ');
+}
+
+function findEmployeeByReference(value) {
+  const reference = String(value ?? '').trim();
+  if (!reference) return null;
+  const byId = state.allEmployees.find((employee) => employee.id === reference);
+  if (byId) return byId;
+  const normalizedName = normalizePersonName(reference);
+  return state.allEmployees.find((employee) => normalizePersonName(employee.name) === normalizedName) || null;
+}
+
+function detectEmployeeColumn(rows) {
+  const columns = ['col1', 'col2', 'col3', 'col4', 'col5', 'col6'];
+  const result = columns
+    .map((column) => ({ column, matches: rows.filter((row) => findEmployeeByReference(row[column])).length }))
+    .sort((a, b) => b.matches - a.matches)[0];
+  return result?.matches ? result.column : null;
+}
+
 function normalizeColumnMatrixShifts(rows, date) {
   const weekDay = fromIsoDate(date).getDay();
   if (weekDay < 1 || weekDay > 5) return [];
-  const shiftColumn = `col${weekDay + 1}`; // col2 = ПН ... col6 = ПТ
+
+  const columns = ['col1', 'col2', 'col3', 'col4', 'col5', 'col6'];
+  const employeeColumn = detectEmployeeColumn(rows);
+  if (!employeeColumn) return [];
+
+  const weekdayColumns = columns.filter((column) => column !== employeeColumn);
+  const shiftColumn = weekdayColumns[weekDay - 1];
   const workingRows = rows
     .filter((row) => !NON_WORKING_SHIFT_VALUES.has(normalizeScheduleValue(row[shiftColumn])))
-    .map((row) => ({ employee_name: row.col1, status: row[shiftColumn] }));
+    .map((row) => {
+      const employee = findEmployeeByReference(row[employeeColumn]);
+      return { employee_id: employee?.id, status: row[shiftColumn] };
+    });
   return normalizeWorkingShifts(workingRows);
+}
+
+function normalizeGenericColumnRows(rows) {
+  const employeeColumn = detectEmployeeColumn(rows);
+  if (!employeeColumn) return [];
+  return normalizeWorkingShifts(rows.map((row) => ({
+    employee_id: findEmployeeByReference(row[employeeColumn])?.id,
+    status: 'working',
+  })));
 }
 
 function normalizeWorkingShifts(rows) {
@@ -459,9 +505,7 @@ function normalizeWorkingShifts(rows) {
     const nestedEmployee = row.employee && typeof row.employee === 'object' ? row.employee : null;
     const rawEmployee = typeof row.employee === 'string' ? row.employee.trim() : '';
     const employeeName = String(row.employee_name ?? nestedEmployee?.name ?? row.full_name ?? row.name ?? rawEmployee).trim();
-    const matchedEmployee = employeeName
-      ? state.allEmployees.find((employee) => employee.name.trim().toLocaleLowerCase('ru') === employeeName.toLocaleLowerCase('ru'))
-      : null;
+    const matchedEmployee = findEmployeeByReference(employeeName);
     const employeeStringId = state.allEmployees.some((employee) => employee.id === rawEmployee) ? rawEmployee : null;
     const employeeId = row.employee_id ?? row.consultant_id ?? row.user_id ?? row.staff_id
       ?? nestedEmployee?.id ?? employeeStringId ?? matchedEmployee?.id;
@@ -501,6 +545,10 @@ function scheduleRowContainsDate(row, date) {
   return Object.values(row).some((value) => {
     const numeric = Number(value);
     if (!Number.isFinite(numeric)) return false;
+    if (numeric >= 20000 && numeric <= 80000) {
+      const excelMilliseconds = Math.round((numeric - 25569) * 86400000);
+      return excelMilliseconds >= start && excelMilliseconds < end;
+    }
     const milliseconds = numeric > 100000000000 ? numeric : numeric * 1000;
     return milliseconds >= start && milliseconds < end;
   });
@@ -511,7 +559,12 @@ function describeScheduleRows(rows) {
   const keys = [...new Set(rows.slice(0, 5).flatMap((row) => Object.keys(row)))].slice(0, 20);
   const dateSamples = JSON.stringify(rows.slice(0, 20)).match(/\d{4}[-/.]\d{1,2}[-/.]\d{1,2}|\d{1,2}[-/.]\d{1,2}[-/.]\d{4}/g) || [];
   const samples = [...new Set(dateSamples)].slice(0, 5);
-  return `Прочитано строк: ${rows.length}. Поля: ${keys.join(', ') || 'не определены'}. Примеры дат: ${samples.join(', ') || 'не найдены'}`;
+  const matrixSample = rows.slice(0, 2).map((row) =>
+    ['col1', 'col2', 'col3', 'col4', 'col5', 'col6']
+      .filter((key) => key in row)
+      .map((key) => `${key}=${String(row[key] ?? '').slice(0, 28)}`)
+      .join(', ')).filter(Boolean).join(' | ');
+  return `Прочитано строк: ${rows.length}. Поля: ${keys.join(', ') || 'не определены'}. Примеры дат: ${samples.join(', ') || 'не найдены'}. Пример матрицы: ${matrixSample || 'нет'}`;
 }
 
 async function loadWorkingEmployees(date) {
@@ -555,7 +608,8 @@ async function loadWorkingEmployees(date) {
     }
     const datedRows = allRows.filter((row) => scheduleRowContainsDate(row, date));
     const normalized = normalizeWorkingShifts(datedRows);
-    if (normalized.length) return { data: normalized, error: null };
+    const genericColumns = normalized.length ? normalized : normalizeGenericColumnRows(datedRows);
+    if (genericColumns.length) return { data: genericColumns, error: null };
     return {
       data: null,
       error: { message: `За ${toRuDate(date)} рабочие строки не найдены. ${describeScheduleRows(allRows)}` },
