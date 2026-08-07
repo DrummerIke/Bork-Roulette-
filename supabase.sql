@@ -25,6 +25,7 @@ alter table public.roulette_draws add column if not exists checklist jsonb not n
 -- браузерного anon-клиента, если его отозвали при настройке других таблиц.
 grant usage on schema public to anon, authenticated;
 grant select on table public.employees to anon, authenticated;
+grant select on table public.office_shifts to anon, authenticated;
 grant select, insert, update on table public.roulette_phone_entries to anon, authenticated;
 grant select, insert on table public.roulette_draws to anon, authenticated;
 
@@ -105,6 +106,10 @@ do $$
 begin
   if not exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'employees' and policyname = 'employees public read') then
     create policy "employees public read" on public.employees for select using (true);
+  end if;
+
+  if not exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'office_shifts' and policyname = 'office shifts roulette read') then
+    create policy "office shifts roulette read" on public.office_shifts for select using (true);
   end if;
 
   if not exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'roulette_phone_entries' and policyname = 'roulette entries public read') then

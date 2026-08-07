@@ -5,6 +5,7 @@ const SUPABASE_ANON_KEY = window.BORK_SUPABASE_ANON_KEY || window.NEXT_PUBLIC_SU
 const TABLE_ENTRIES = 'roulette_phone_entries';
 const TABLE_DRAWS = 'roulette_draws';
 const EMPLOYEES_TABLE = 'employees';
+const OFFICE_SHIFTS_TABLE = 'office_shifts';
 const WORKING_EMPLOYEES_RPC = 'get_roulette_working_employees';
 const DRAW_POSITION = 'Personal Consultant';
 const MONTHS = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'];
@@ -396,7 +397,7 @@ async function renderStats() {
   if (!date) return;
   const [entriesResult, scheduleResult] = await Promise.all([
     supabase.from(TABLE_ENTRIES).select('employee_id,phone').eq('entry_date', date),
-    supabase.rpc(WORKING_EMPLOYEES_RPC, { p_work_date: date }),
+    loadWorkingEmployees(date),
   ]);
   if (entriesResult.error) {
     showToast(`Ошибка статистики: ${entriesResult.error.message}`);
@@ -427,6 +428,46 @@ async function renderStats() {
     : missing.length
       ? missing.map((employee) => `<article class="person missing"><strong>${employee.name}</strong></article>`).join('')
       : '<p class="empty-state">Все работавшие сотрудники заполнили.</p>';
+}
+
+const MISSING_COLUMN_CODES = new Set(['42703', 'PGRST204']);
+const NON_WORKING_SHIFT_VALUES = new Set([
+  'off', 'day off', 'weekend', 'vacation', 'sick',
+  'выходной', 'отпуск', 'больничный', 'не работает',
+]);
+
+function normalizeWorkingShifts(rows) {
+  const ids = new Set();
+  rows.forEach((row) => {
+    const employeeId = row.employee_id ?? row.consultant_id;
+    const status = String(row.status ?? row.shift_type ?? row.type ?? 'working').trim().toLocaleLowerCase('ru');
+    const isWorking = String(row.is_working ?? 'true').trim().toLocaleLowerCase('en-US');
+    if (employeeId && !NON_WORKING_SHIFT_VALUES.has(status) && !['false', '0', 'no'].includes(isWorking)) {
+      ids.add(employeeId);
+    }
+  });
+  return [...ids].map((employeeId) => ({ employee_id: employeeId }));
+}
+
+async function loadWorkingEmployees(date) {
+  const rpcResult = await supabase.rpc(WORKING_EMPLOYEES_RPC, { p_work_date: date });
+  if (!rpcResult.error) return rpcResult;
+
+  // Резервный путь не зависит от наличия RPC в schema cache. Он особенно
+  // полезен сразу после обновления приложения, пока SQL-функция ещё не создана.
+  const dateColumns = ['shift_date', 'date', 'work_date'];
+  let directError = null;
+  for (const dateColumn of dateColumns) {
+    const result = await supabase.from(OFFICE_SHIFTS_TABLE).select('*').eq(dateColumn, date);
+    if (!result.error) return { data: normalizeWorkingShifts(result.data || []), error: null };
+    directError = result.error;
+    if (!MISSING_COLUMN_CODES.has(result.error.code)) break;
+  }
+
+  return {
+    data: null,
+    error: directError || rpcResult.error,
+  };
 }
 
 async function drawWinner() {
