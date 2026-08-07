@@ -410,8 +410,10 @@ async function renderStats() {
     return acc;
   }, {});
   const filled = state.employees.filter((employee) => filledByEmployee[employee.id]);
-  const scheduleAvailable = !scheduleResult.error;
   const workingIds = new Set((scheduleResult.data || []).map((row) => row.employee_id));
+  // Если кто-то уже отправил номер, но график вернул ноль сотрудников, ответ
+  // графика нельзя считать достоверным и тем более писать «все заполнили».
+  const scheduleAvailable = !scheduleResult.error && (workingIds.size > 0 || filled.length === 0);
   const working = scheduleAvailable
     ? state.employees.filter((employee) => workingIds.has(employee.id))
     : [];
@@ -439,7 +441,11 @@ const NON_WORKING_SHIFT_VALUES = new Set([
 function normalizeWorkingShifts(rows) {
   const ids = new Set();
   rows.forEach((row) => {
-    const employeeId = row.employee_id ?? row.consultant_id;
+    const employeeName = String(row.employee_name ?? row.employee ?? row.full_name ?? row.name ?? '').trim();
+    const matchedEmployee = employeeName
+      ? state.allEmployees.find((employee) => employee.name.trim().toLocaleLowerCase('ru') === employeeName.toLocaleLowerCase('ru'))
+      : null;
+    const employeeId = row.employee_id ?? row.consultant_id ?? row.user_id ?? row.staff_id ?? matchedEmployee?.id;
     const status = String(row.status ?? row.shift_type ?? row.type ?? 'working').trim().toLocaleLowerCase('ru');
     const isWorking = String(row.is_working ?? 'true').trim().toLocaleLowerCase('en-US');
     if (employeeId && !NON_WORKING_SHIFT_VALUES.has(status) && !['false', '0', 'no'].includes(isWorking)) {
@@ -451,22 +457,35 @@ function normalizeWorkingShifts(rows) {
 
 async function loadWorkingEmployees(date) {
   const rpcResult = await supabase.rpc(WORKING_EMPLOYEES_RPC, { p_work_date: date });
-  if (!rpcResult.error) return rpcResult;
+  if (!rpcResult.error && rpcResult.data?.length) return rpcResult;
 
-  // Резервный путь не зависит от наличия RPC в schema cache. Он особенно
-  // полезен сразу после обновления приложения, пока SQL-функция ещё не создана.
-  const dateColumns = ['shift_date', 'date', 'work_date'];
+  // Пустой ответ RPC также перепроверяем напрямую: он может означать, что дата
+  // хранится как timestamp или что приложение графика использует другое имя поля.
+  const dateColumns = ['shift_date', 'date', 'work_date', 'day', 'start_at', 'starts_at'];
+  const nextDate = fromIsoDate(date);
+  nextDate.setDate(nextDate.getDate() + 1);
+  const nextDateIso = toLocalIso(nextDate);
   let directError = null;
   for (const dateColumn of dateColumns) {
-    const result = await supabase.from(OFFICE_SHIFTS_TABLE).select('*').eq(dateColumn, date);
-    if (!result.error) return { data: normalizeWorkingShifts(result.data || []), error: null };
+    const result = await supabase
+      .from(OFFICE_SHIFTS_TABLE)
+      .select('*')
+      .gte(dateColumn, date)
+      .lt(dateColumn, nextDateIso);
+    if (!result.error) {
+      const normalized = normalizeWorkingShifts(result.data || []);
+      if (result.data?.length && !normalized.length) {
+        return { data: null, error: { message: 'В строках office_shifts не найден сотрудник' } };
+      }
+      return { data: normalized, error: null };
+    }
     directError = result.error;
     if (!MISSING_COLUMN_CODES.has(result.error.code)) break;
   }
 
   return {
     data: null,
-    error: directError || rpcResult.error,
+    error: directError || rpcResult.error || { message: 'График на выбранную дату не найден' },
   };
 }
 

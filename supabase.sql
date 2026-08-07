@@ -67,12 +67,23 @@ as $$
     select
       coalesce(
         to_jsonb(shift_row) ->> 'employee_id',
-        to_jsonb(shift_row) ->> 'consultant_id'
+        to_jsonb(shift_row) ->> 'consultant_id',
+        to_jsonb(shift_row) ->> 'user_id',
+        to_jsonb(shift_row) ->> 'staff_id'
       ) as employee_value,
+      coalesce(
+        to_jsonb(shift_row) ->> 'employee_name',
+        to_jsonb(shift_row) ->> 'employee',
+        to_jsonb(shift_row) ->> 'full_name',
+        to_jsonb(shift_row) ->> 'name'
+      ) as employee_name,
       coalesce(
         to_jsonb(shift_row) ->> 'shift_date',
         to_jsonb(shift_row) ->> 'date',
-        to_jsonb(shift_row) ->> 'work_date'
+        to_jsonb(shift_row) ->> 'work_date',
+        to_jsonb(shift_row) ->> 'day',
+        to_jsonb(shift_row) ->> 'start_at',
+        to_jsonb(shift_row) ->> 'starts_at'
       ) as date_value,
       lower(coalesce(
         to_jsonb(shift_row) ->> 'status',
@@ -83,15 +94,28 @@ as $$
       coalesce(to_jsonb(shift_row) ->> 'is_working', 'true') as is_working
     from public.office_shifts as shift_row
   )
-  select distinct employee_value::uuid
-  from normalized_shifts
+  select distinct coalesce(
+    case
+      when shift.employee_value ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+        then shift.employee_value::uuid
+      else null
+    end,
+    employee.id
+  )
+  from normalized_shifts as shift
+  left join public.employees as employee
+    on lower(coalesce(to_jsonb(employee) ->> 'name', to_jsonb(employee) ->> 'full_name')) = lower(shift.employee_name)
   where case
-      when date_value ~ '^\d{4}-\d{2}-\d{2}$' then date_value::date
+      when left(shift.date_value, 10) ~ '^\d{4}-\d{2}-\d{2}$' then left(shift.date_value, 10)::date
       else null
     end = p_work_date
-    and employee_value ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
-    and lower(is_working) not in ('false', '0', 'no')
-    and shift_status not in (
+    and coalesce(shift.employee_value, shift.employee_name) is not null
+    and (
+      shift.employee_value ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+      or employee.id is not null
+    )
+    and lower(shift.is_working) not in ('false', '0', 'no')
+    and shift.shift_status not in (
       'off', 'day off', 'weekend', 'vacation', 'sick',
       'выходной', 'отпуск', 'больничный', 'не работает'
     );

@@ -50,6 +50,11 @@ class QueryBuilder {
     return this;
   }
 
+  lt(column, value) {
+    this.params.append(column, `lt.${value}`);
+    return this;
+  }
+
   in(column, values) {
     this.params.append(column, `in.(${values.join(',')})`);
     return this;

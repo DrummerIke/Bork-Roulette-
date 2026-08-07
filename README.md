@@ -8,7 +8,7 @@
 
 1. Выполните SQL из `supabase.sql` в Supabase SQL Editor.
 2. Убедитесь, что таблица `public.employees` содержит поля `id uuid`, `name text` и `Position text`. Также поддерживается переименованный столбец `position` или `role`; для участия в форме и отборе его значение должно быть `Personal Consultant` (регистр и случайные пробелы виджет нормализует).
-3. Для статистики используется `public.office_shifts`. Функция и прямой резервный запрос распознают дату в `shift_date`, `date` или `work_date`, сотрудника в `employee_id` или `consultant_id`, а состояние смены — в `status`, `shift_type`, `type` и `is_working`. Строки выходных, отпуска и больничного исключаются. Если у таблицы другие названия колонок, добавьте их в `get_roulette_working_employees()` внутри `supabase.sql` и в `loadWorkingEmployees()` внутри `src/app.js`.
+3. Для статистики используется `public.office_shifts`. Поддерживаются даты и timestamps в `shift_date`, `date`, `work_date`, `day`, `start_at` или `starts_at`; сотрудник может находиться в `employee_id`, `consultant_id`, `user_id`, `staff_id` либо определяться по `employee_name`/`employee`/`full_name`/`name`. Состояние смены читается из `status`, `shift_type`, `type` и `is_working`. Строки выходных, отпуска и больничного исключаются.
 4. Виджет уже содержит текущий публичный Supabase URL как fallback. Если ключ нужно заменить, в Google Sites перед `src/app.js` задайте публичные ключи проекта:
 
 ```html
