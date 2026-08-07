@@ -5,6 +5,7 @@ const SUPABASE_ANON_KEY = window.BORK_SUPABASE_ANON_KEY || window.NEXT_PUBLIC_SU
 const TABLE_ENTRIES = 'roulette_phone_entries';
 const TABLE_DRAWS = 'roulette_draws';
 const EMPLOYEES_TABLE = 'employees';
+const WORKING_EMPLOYEES_RPC = 'get_roulette_working_employees';
 const DRAW_POSITION = 'Personal Consultant';
 const MONTHS = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'];
 const WEEKDAYS = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'];
@@ -393,30 +394,39 @@ async function renderStats() {
   if (!state.rouletteUnlocked) return;
   const date = $('statsDateSelect').value || toLocalIso(new Date());
   if (!date) return;
-  const { data: entries, error } = await supabase
-    .from(TABLE_ENTRIES)
-    .select('employee_id,phone')
-    .eq('entry_date', date);
-  if (error) {
-    showToast(`Ошибка статистики: ${error.message}`);
+  const [entriesResult, scheduleResult] = await Promise.all([
+    supabase.from(TABLE_ENTRIES).select('employee_id,phone').eq('entry_date', date),
+    supabase.rpc(WORKING_EMPLOYEES_RPC, { p_work_date: date }),
+  ]);
+  if (entriesResult.error) {
+    showToast(`Ошибка статистики: ${entriesResult.error.message}`);
     return;
   }
 
-  const filledByEmployee = (entries || []).reduce((acc, entry) => {
+  const filledByEmployee = (entriesResult.data || []).reduce((acc, entry) => {
     if (!acc[entry.employee_id]) acc[entry.employee_id] = [];
     acc[entry.employee_id].push(entry.phone);
     return acc;
   }, {});
   const filled = state.employees.filter((employee) => filledByEmployee[employee.id]);
-  const missing = state.employees.filter((employee) => !filledByEmployee[employee.id]);
+  const scheduleAvailable = !scheduleResult.error;
+  const workingIds = new Set((scheduleResult.data || []).map((row) => row.employee_id));
+  const working = scheduleAvailable
+    ? state.employees.filter((employee) => workingIds.has(employee.id))
+    : [];
+  const missing = working.filter((employee) => !filledByEmployee[employee.id]);
 
-  $('statsSummary').innerHTML = `<span>Заполнили: ${filled.length}</span><span>Не заполнили: ${missing.length}</span>`;
+  $('statsSummary').innerHTML = scheduleAvailable
+    ? `<span>Заполнили: ${filled.length}</span><span>Работали: ${working.length}</span><span>Не заполнили из работавших: ${missing.length}</span>`
+    : `<span>Заполнили: ${filled.length}</span><span>График недоступен</span>`;
   $('filledList').innerHTML = filled.length
     ? filled.map((employee) => `<article class="person filled"><strong>${employee.name}</strong><small>${filledByEmployee[employee.id].join(', ')}</small></article>`).join('')
     : '<p class="empty-state">Пока никто не заполнил.</p>';
-  $('missingList').innerHTML = missing.length
-    ? missing.map((employee) => `<article class="person missing"><strong>${employee.name}</strong></article>`).join('')
-    : '<p class="empty-state">Все сотрудники заполнили.</p>';
+  $('missingList').innerHTML = !scheduleAvailable
+    ? '<p class="empty-state">Не удалось прочитать график. Выполните актуальный supabase.sql — без графика список не показывается, чтобы не отметить выходных как не заполнивших.</p>'
+    : missing.length
+      ? missing.map((employee) => `<article class="person missing"><strong>${employee.name}</strong></article>`).join('')
+      : '<p class="empty-state">Все работавшие сотрудники заполнили.</p>';
 }
 
 async function drawWinner() {

@@ -52,6 +52,53 @@ $$;
 revoke all on function public.get_roulette_employees() from public;
 grant execute on function public.get_roulette_employees() to anon, authenticated;
 
+-- Возвращает только сотрудников, которые работали в выбранный день. Чтение
+-- через JSON делает интеграцию устойчивой к типовым названиям колонок графика:
+-- shift_date/date/work_date, employee_id/consultant_id и status/shift_type/type.
+create or replace function public.get_roulette_working_employees(p_work_date date)
+returns table (employee_id uuid)
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  with normalized_shifts as (
+    select
+      coalesce(
+        to_jsonb(shift_row) ->> 'employee_id',
+        to_jsonb(shift_row) ->> 'consultant_id'
+      ) as employee_value,
+      coalesce(
+        to_jsonb(shift_row) ->> 'shift_date',
+        to_jsonb(shift_row) ->> 'date',
+        to_jsonb(shift_row) ->> 'work_date'
+      ) as date_value,
+      lower(coalesce(
+        to_jsonb(shift_row) ->> 'status',
+        to_jsonb(shift_row) ->> 'shift_type',
+        to_jsonb(shift_row) ->> 'type',
+        'working'
+      )) as shift_status,
+      coalesce(to_jsonb(shift_row) ->> 'is_working', 'true') as is_working
+    from public.office_shifts as shift_row
+  )
+  select distinct employee_value::uuid
+  from normalized_shifts
+  where case
+      when date_value ~ '^\d{4}-\d{2}-\d{2}$' then date_value::date
+      else null
+    end = p_work_date
+    and employee_value ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
+    and lower(is_working) not in ('false', '0', 'no')
+    and shift_status not in (
+      'off', 'day off', 'weekend', 'vacation', 'sick',
+      'выходной', 'отпуск', 'больничный', 'не работает'
+    );
+$$;
+
+revoke all on function public.get_roulette_working_employees(date) from public;
+grant execute on function public.get_roulette_working_employees(date) to anon, authenticated;
+
 -- Таблица employees уже существует. Для виджета нужен select через anon key.
 -- Если RLS на employees включен, эта политика откроет только чтение списка сотрудников.
 do $$
