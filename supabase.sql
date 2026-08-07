@@ -78,7 +78,8 @@ as $$
         to_jsonb(shift_row) #>> '{employee,name}',
         to_jsonb(shift_row) ->> 'employee',
         to_jsonb(shift_row) ->> 'full_name',
-        to_jsonb(shift_row) ->> 'name'
+        to_jsonb(shift_row) ->> 'name',
+        to_jsonb(shift_row) ->> 'col1'
       ) as employee_name,
       coalesce(
         to_jsonb(shift_row) ->> 'shift_date',
@@ -95,6 +96,14 @@ as $$
         'working'
       )) as shift_status,
       coalesce(to_jsonb(shift_row) ->> 'is_working', 'true') as is_working,
+      case extract(isodow from p_work_date)::int
+        when 1 then to_jsonb(shift_row) ->> 'col2'
+        when 2 then to_jsonb(shift_row) ->> 'col3'
+        when 3 then to_jsonb(shift_row) ->> 'col4'
+        when 4 then to_jsonb(shift_row) ->> 'col5'
+        when 5 then to_jsonb(shift_row) ->> 'col6'
+        else null
+      end as matrix_shift,
       to_jsonb(shift_row) as row_data
     from public.office_shifts as shift_row
   )
@@ -125,6 +134,15 @@ as $$
       or (
         shift.row_data::text like ('%' || to_char(p_work_date, 'YYYY-MM') || '%')
         and shift.row_data::text like ('%"' || extract(day from p_work_date)::int::text || '"%')
+      )
+      or (
+        shift.date_value is null
+        and shift.employee_name is not null
+        and coalesce(lower(trim(shift.matrix_shift)), '') not in (
+          '', '-', '—', '0', 'false', 'нет', 'off', 'day off', 'weekend',
+          'vacation', 'sick', 'выходной', 'вых', 'в', 'отпуск', 'о',
+          'больничный', 'б', 'не работает'
+        )
       )
     )
     and coalesce(shift.employee_value, shift.employee_name) is not null

@@ -435,8 +435,23 @@ async function renderStats() {
 const MISSING_COLUMN_CODES = new Set(['42703', 'PGRST204']);
 const NON_WORKING_SHIFT_VALUES = new Set([
   'off', 'day off', 'weekend', 'vacation', 'sick',
-  'выходной', 'отпуск', 'больничный', 'не работает',
+  'выходной', 'вых', 'в', 'отпуск', 'о', 'больничный', 'б', 'не работает',
+  '', '-', '—', '0', 'false', 'нет',
 ]);
+
+function normalizeScheduleValue(value) {
+  return String(value ?? '').trim().toLocaleLowerCase('ru');
+}
+
+function normalizeColumnMatrixShifts(rows, date) {
+  const weekDay = fromIsoDate(date).getDay();
+  if (weekDay < 1 || weekDay > 5) return [];
+  const shiftColumn = `col${weekDay + 1}`; // col2 = ПН ... col6 = ПТ
+  const workingRows = rows
+    .filter((row) => !NON_WORKING_SHIFT_VALUES.has(normalizeScheduleValue(row[shiftColumn])))
+    .map((row) => ({ employee_name: row.col1, status: row[shiftColumn] }));
+  return normalizeWorkingShifts(workingRows);
+}
 
 function normalizeWorkingShifts(rows) {
   const ids = new Set();
@@ -532,12 +547,18 @@ async function loadWorkingEmployees(date) {
   // или записаны как ДД-ММ-ГГГГ. Забираем строки и ищем дату во всей записи.
   const broadResult = await supabase.from(OFFICE_SHIFTS_TABLE).select('*');
   if (!broadResult.error) {
-    const datedRows = (broadResult.data || []).filter((row) => scheduleRowContainsDate(row, date));
+    const allRows = broadResult.data || [];
+    const hasColumnMatrix = allRows.some((row) => ['col1', 'col2', 'col3', 'col4', 'col5', 'col6'].every((key) => key in row));
+    if (hasColumnMatrix) {
+      const matrixEmployees = normalizeColumnMatrixShifts(allRows, date);
+      if (matrixEmployees.length) return { data: matrixEmployees, error: null };
+    }
+    const datedRows = allRows.filter((row) => scheduleRowContainsDate(row, date));
     const normalized = normalizeWorkingShifts(datedRows);
     if (normalized.length) return { data: normalized, error: null };
     return {
       data: null,
-      error: { message: `За ${toRuDate(date)} рабочие строки не найдены. ${describeScheduleRows(broadResult.data || [])}` },
+      error: { message: `За ${toRuDate(date)} рабочие строки не найдены. ${describeScheduleRows(allRows)}` },
     };
   }
 
