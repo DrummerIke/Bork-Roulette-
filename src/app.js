@@ -426,7 +426,7 @@ async function renderStats() {
     ? filled.map((employee) => `<article class="person filled"><strong>${employee.name}</strong><small>${filledByEmployee[employee.id].join(', ')}</small></article>`).join('')
     : '<p class="empty-state">Пока никто не заполнил.</p>';
   $('missingList').innerHTML = !scheduleAvailable
-    ? '<p class="empty-state">Не удалось прочитать график. Выполните актуальный supabase.sql — без графика список не показывается, чтобы не отметить выходных как не заполнивших.</p>'
+    ? `<p class="empty-state">Не удалось прочитать график. Без графика список не показывается, чтобы не отметить выходных как не заполнивших.<br><small>Причина: ${scheduleResult.error?.message || 'за выбранную дату график вернул 0 сотрудников'}</small></p>`
     : missing.length
       ? missing.map((employee) => `<article class="person missing"><strong>${employee.name}</strong></article>`).join('')
       : '<p class="empty-state">Все работавшие сотрудники заполнили.</p>';
@@ -441,11 +441,15 @@ const NON_WORKING_SHIFT_VALUES = new Set([
 function normalizeWorkingShifts(rows) {
   const ids = new Set();
   rows.forEach((row) => {
-    const employeeName = String(row.employee_name ?? row.employee ?? row.full_name ?? row.name ?? '').trim();
+    const nestedEmployee = row.employee && typeof row.employee === 'object' ? row.employee : null;
+    const rawEmployee = typeof row.employee === 'string' ? row.employee.trim() : '';
+    const employeeName = String(row.employee_name ?? nestedEmployee?.name ?? row.full_name ?? row.name ?? rawEmployee).trim();
     const matchedEmployee = employeeName
       ? state.allEmployees.find((employee) => employee.name.trim().toLocaleLowerCase('ru') === employeeName.toLocaleLowerCase('ru'))
       : null;
-    const employeeId = row.employee_id ?? row.consultant_id ?? row.user_id ?? row.staff_id ?? matchedEmployee?.id;
+    const employeeStringId = state.allEmployees.some((employee) => employee.id === rawEmployee) ? rawEmployee : null;
+    const employeeId = row.employee_id ?? row.consultant_id ?? row.user_id ?? row.staff_id
+      ?? nestedEmployee?.id ?? employeeStringId ?? matchedEmployee?.id;
     const status = String(row.status ?? row.shift_type ?? row.type ?? 'working').trim().toLocaleLowerCase('ru');
     const isWorking = String(row.is_working ?? 'true').trim().toLocaleLowerCase('en-US');
     if (employeeId && !NON_WORKING_SHIFT_VALUES.has(status) && !['false', '0', 'no'].includes(isWorking)) {
@@ -453,6 +457,13 @@ function normalizeWorkingShifts(rows) {
     }
   });
   return [...ids].map((employeeId) => ({ employee_id: employeeId }));
+}
+
+function scheduleRowContainsDate(row, date) {
+  const ruDate = toRuDate(date);
+  const variants = [date, ruDate, ruDate.replaceAll('-', '.'), ruDate.replaceAll('-', '/')];
+  const serialized = JSON.stringify(row);
+  return variants.some((variant) => serialized.includes(variant));
 }
 
 async function loadWorkingEmployees(date) {
@@ -472,20 +483,34 @@ async function loadWorkingEmployees(date) {
       .select('*')
       .gte(dateColumn, date)
       .lt(dateColumn, nextDateIso);
-    if (!result.error) {
+    if (!result.error && result.data?.length) {
       const normalized = normalizeWorkingShifts(result.data || []);
       if (result.data?.length && !normalized.length) {
         return { data: null, error: { message: 'В строках office_shifts не найден сотрудник' } };
       }
       return { data: normalized, error: null };
     }
+    if (!result.error) continue;
     directError = result.error;
     if (!MISSING_COLUMN_CODES.has(result.error.code)) break;
   }
 
+  // Последняя ступень поддерживает графики, где дни лежат внутри JSON/массива
+  // или записаны как ДД-ММ-ГГГГ. Забираем строки и ищем дату во всей записи.
+  const broadResult = await supabase.from(OFFICE_SHIFTS_TABLE).select('*');
+  if (!broadResult.error) {
+    const datedRows = (broadResult.data || []).filter((row) => scheduleRowContainsDate(row, date));
+    const normalized = normalizeWorkingShifts(datedRows);
+    if (normalized.length) return { data: normalized, error: null };
+    return {
+      data: null,
+      error: { message: `В office_shifts не найдены рабочие строки за ${toRuDate(date)}` },
+    };
+  }
+
   return {
     data: null,
-    error: directError || rpcResult.error || { message: 'График на выбранную дату не найден' },
+    error: broadResult.error || directError || rpcResult.error || { message: 'График на выбранную дату не найден' },
   };
 }
 

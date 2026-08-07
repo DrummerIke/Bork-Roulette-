@@ -69,10 +69,13 @@ as $$
         to_jsonb(shift_row) ->> 'employee_id',
         to_jsonb(shift_row) ->> 'consultant_id',
         to_jsonb(shift_row) ->> 'user_id',
-        to_jsonb(shift_row) ->> 'staff_id'
+        to_jsonb(shift_row) ->> 'staff_id',
+        to_jsonb(shift_row) #>> '{employee,id}',
+        to_jsonb(shift_row) ->> 'employee'
       ) as employee_value,
       coalesce(
         to_jsonb(shift_row) ->> 'employee_name',
+        to_jsonb(shift_row) #>> '{employee,name}',
         to_jsonb(shift_row) ->> 'employee',
         to_jsonb(shift_row) ->> 'full_name',
         to_jsonb(shift_row) ->> 'name'
@@ -91,7 +94,8 @@ as $$
         to_jsonb(shift_row) ->> 'type',
         'working'
       )) as shift_status,
-      coalesce(to_jsonb(shift_row) ->> 'is_working', 'true') as is_working
+      coalesce(to_jsonb(shift_row) ->> 'is_working', 'true') as is_working,
+      to_jsonb(shift_row) as row_data
     from public.office_shifts as shift_row
   )
   select distinct coalesce(
@@ -105,10 +109,15 @@ as $$
   from normalized_shifts as shift
   left join public.employees as employee
     on lower(coalesce(to_jsonb(employee) ->> 'name', to_jsonb(employee) ->> 'full_name')) = lower(shift.employee_name)
-  where case
-      when left(shift.date_value, 10) ~ '^\d{4}-\d{2}-\d{2}$' then left(shift.date_value, 10)::date
-      else null
-    end = p_work_date
+  where (
+      case
+        when left(shift.date_value, 10) ~ '^\d{4}-\d{2}-\d{2}$' then left(shift.date_value, 10)::date
+        else null
+      end = p_work_date
+      or shift.row_data::text like ('%' || to_char(p_work_date, 'YYYY-MM-DD') || '%')
+      or shift.row_data::text like ('%' || to_char(p_work_date, 'DD-MM-YYYY') || '%')
+      or shift.row_data::text like ('%' || to_char(p_work_date, 'DD.MM.YYYY') || '%')
+    )
     and coalesce(shift.employee_value, shift.employee_name) is not null
     and (
       shift.employee_value ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
