@@ -115,8 +115,17 @@ as $$
         else null
       end = p_work_date
       or shift.row_data::text like ('%' || to_char(p_work_date, 'YYYY-MM-DD') || '%')
+      or shift.row_data::text like ('%' || to_char(p_work_date, 'YYYY/MM/DD') || '%')
+      or shift.row_data::text like ('%' || to_char(p_work_date, 'YYYY.MM.DD') || '%')
+      or shift.row_data::text like ('%' || to_char(p_work_date, 'YYYY_MM_DD') || '%')
       or shift.row_data::text like ('%' || to_char(p_work_date, 'DD-MM-YYYY') || '%')
       or shift.row_data::text like ('%' || to_char(p_work_date, 'DD.MM.YYYY') || '%')
+      or shift.row_data::text like ('%' || to_char(p_work_date, 'DD/MM/YYYY') || '%')
+      or shift.row_data::text like ('%' || to_char(p_work_date, 'DD_MM_YYYY') || '%')
+      or (
+        shift.row_data::text like ('%' || to_char(p_work_date, 'YYYY-MM') || '%')
+        and shift.row_data::text like ('%"' || extract(day from p_work_date)::int::text || '"%')
+      )
     )
     and coalesce(shift.employee_value, shift.employee_name) is not null
     and (

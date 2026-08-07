@@ -5,7 +5,7 @@ const SUPABASE_ANON_KEY = window.BORK_SUPABASE_ANON_KEY || window.NEXT_PUBLIC_SU
 const TABLE_ENTRIES = 'roulette_phone_entries';
 const TABLE_DRAWS = 'roulette_draws';
 const EMPLOYEES_TABLE = 'employees';
-const OFFICE_SHIFTS_TABLE = 'office_shifts';
+const OFFICE_SHIFTS_TABLE = window.BORK_OFFICE_SHIFTS_TABLE || 'office_shifts';
 const WORKING_EMPLOYEES_RPC = 'get_roulette_working_employees';
 const DRAW_POSITION = 'Personal Consultant';
 const MONTHS = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'];
@@ -460,10 +460,43 @@ function normalizeWorkingShifts(rows) {
 }
 
 function scheduleRowContainsDate(row, date) {
+  const [year, month, day] = date.split('-');
   const ruDate = toRuDate(date);
-  const variants = [date, ruDate, ruDate.replaceAll('-', '.'), ruDate.replaceAll('-', '/')];
+  const variants = [
+    date,
+    `${year}/${month}/${day}`,
+    `${year}.${month}.${day}`,
+    `${year}_${month}_${day}`,
+    ruDate,
+    ruDate.replaceAll('-', '.'),
+    ruDate.replaceAll('-', '/'),
+    ruDate.replaceAll('-', '_'),
+  ];
   const serialized = JSON.stringify(row);
-  return variants.some((variant) => serialized.includes(variant));
+  if (variants.some((variant) => serialized.includes(variant))) return true;
+
+  // Месячные графики часто хранят месяц отдельно, а номер дня — ключом JSON.
+  const monthVariants = [`${year}-${month}`, `${year}/${month}`, `${year}.${month}`, `${year}_${month}`];
+  const numericDay = String(Number(day));
+  if (monthVariants.some((variant) => serialized.includes(variant)) && serialized.includes(`"${numericDay}"`)) return true;
+
+  // Поддерживаем Unix timestamp в секундах и миллисекундах.
+  const start = fromIsoDate(date).getTime();
+  const end = start + 86400000;
+  return Object.values(row).some((value) => {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) return false;
+    const milliseconds = numeric > 100000000000 ? numeric : numeric * 1000;
+    return milliseconds >= start && milliseconds < end;
+  });
+}
+
+function describeScheduleRows(rows) {
+  if (!rows.length) return `Таблица ${OFFICE_SHIFTS_TABLE} доступна, но в ней нет строк`;
+  const keys = [...new Set(rows.slice(0, 5).flatMap((row) => Object.keys(row)))].slice(0, 20);
+  const dateSamples = JSON.stringify(rows.slice(0, 20)).match(/\d{4}[-/.]\d{1,2}[-/.]\d{1,2}|\d{1,2}[-/.]\d{1,2}[-/.]\d{4}/g) || [];
+  const samples = [...new Set(dateSamples)].slice(0, 5);
+  return `Прочитано строк: ${rows.length}. Поля: ${keys.join(', ') || 'не определены'}. Примеры дат: ${samples.join(', ') || 'не найдены'}`;
 }
 
 async function loadWorkingEmployees(date) {
@@ -504,7 +537,7 @@ async function loadWorkingEmployees(date) {
     if (normalized.length) return { data: normalized, error: null };
     return {
       data: null,
-      error: { message: `В office_shifts не найдены рабочие строки за ${toRuDate(date)}` },
+      error: { message: `За ${toRuDate(date)} рабочие строки не найдены. ${describeScheduleRows(broadResult.data || [])}` },
     };
   }
 
