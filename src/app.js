@@ -411,6 +411,11 @@ async function renderStats() {
   }, {});
   const filled = state.employees.filter((employee) => filledByEmployee[employee.id]);
   const workingIds = new Set((scheduleResult.data || []).map((row) => row.employee_id));
+  // Отправленный номер — дополнительное подтверждение, что консультант работал.
+  // Это не позволяет частично распознанной матрице показать «работали: 5» при
+  // пятнадцати фактически заполнивших. Лидеры сюда не попадут: filled уже
+  // сформирован только из state.employees с ролью Personal Consultant.
+  filled.forEach((employee) => workingIds.add(employee.id));
   // Если кто-то уже отправил номер, но график вернул ноль сотрудников, ответ
   // графика нельзя считать достоверным и тем более писать «все заполнили».
   const scheduleAvailable = !scheduleResult.error && (workingIds.size > 0 || filled.length === 0);
@@ -503,7 +508,9 @@ function normalizeColumnMatrixShifts(rows, date) {
 function normalizeGenericColumnRows(rows) {
   const employeeColumn = detectEmployeeColumn(rows);
   if (!employeeColumn) return [];
-  return normalizeWorkingShifts(rows.map((row) => ({
+  const workingRows = rows.filter((row) =>
+    !Object.entries(row).some(([key, value]) => key !== employeeColumn && isNonWorkingScheduleValue(value)));
+  return normalizeWorkingShifts(workingRows.map((row) => ({
     employee_id: findEmployeeByReference(row[employeeColumn])?.id,
     status: 'working',
   })));
@@ -579,10 +586,10 @@ function describeScheduleRows(rows) {
 
 async function loadWorkingEmployees(date) {
   const rpcResult = await supabase.rpc(WORKING_EMPLOYEES_RPC, { p_work_date: date });
-  if (!rpcResult.error && rpcResult.data?.length) return rpcResult;
 
-  // Пустой ответ RPC также перепроверяем напрямую: он может означать, что дата
-  // хранится как timestamp или что приложение графика использует другое имя поля.
+  // Для таблиц col1…col6 сервер не знает, какой столбец содержит сотрудника.
+  // Поэтому прямое чтение проверяем даже при непустом RPC и используем каталог
+  // employees для определения структуры. RPC остаётся резервом при запрете SELECT.
   const dateColumns = ['shift_date', 'date', 'work_date', 'day', 'start_at', 'starts_at'];
   const nextDate = fromIsoDate(date);
   nextDate.setDate(nextDate.getDate() + 1);
@@ -611,15 +618,20 @@ async function loadWorkingEmployees(date) {
   const broadResult = await supabase.from(OFFICE_SHIFTS_TABLE).select('*');
   if (!broadResult.error) {
     const allRows = broadResult.data || [];
+    const datedRows = allRows.filter((row) => scheduleRowContainsDate(row, date));
+    const normalized = normalizeWorkingShifts(datedRows);
+    const genericColumns = normalized.length ? normalized : normalizeGenericColumnRows(datedRows);
+    if (genericColumns.length) return { data: genericColumns, error: null };
+
+    // Недельную матрицу рассматриваем только после поиска реальной даты. Раньше
+    // эта ветка срабатывала первой и ошибочно принимала служебные col2…col6 за дни.
     const hasColumnMatrix = allRows.some((row) => ['col1', 'col2', 'col3', 'col4', 'col5', 'col6'].every((key) => key in row));
     if (hasColumnMatrix) {
       const matrixEmployees = normalizeColumnMatrixShifts(allRows, date);
       if (matrixEmployees.length) return { data: matrixEmployees, error: null };
     }
-    const datedRows = allRows.filter((row) => scheduleRowContainsDate(row, date));
-    const normalized = normalizeWorkingShifts(datedRows);
-    const genericColumns = normalized.length ? normalized : normalizeGenericColumnRows(datedRows);
-    if (genericColumns.length) return { data: genericColumns, error: null };
+
+    if (!rpcResult.error && rpcResult.data?.length) return rpcResult;
     return {
       data: null,
       error: { message: `За ${toRuDate(date)} рабочие строки не найдены. ${describeScheduleRows(allRows)}` },
@@ -627,8 +639,10 @@ async function loadWorkingEmployees(date) {
   }
 
   return {
-    data: null,
-    error: broadResult.error || directError || rpcResult.error || { message: 'График на выбранную дату не найден' },
+    data: !rpcResult.error && rpcResult.data?.length ? rpcResult.data : null,
+    error: !rpcResult.error && rpcResult.data?.length
+      ? null
+      : broadResult.error || directError || rpcResult.error || { message: 'График на выбранную дату не найден' },
   };
 }
 
