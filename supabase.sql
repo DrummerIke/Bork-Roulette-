@@ -152,6 +152,9 @@ declare
   employee_name text;
   schedule_data jsonb;
   shift_value text;
+  shift_reference text;
+  shift_definition jsonb;
+  shift_dictionary record;
   mapped_employee uuid;
   week_monday date;
   direct_date_match boolean;
@@ -215,6 +218,35 @@ begin
         );
         schedule_data := coalesce(row_data -> 'schedule', row_data -> 'shifts', row_data -> 'week_data', row_data -> 'days');
         shift_value := null;
+        shift_reference := coalesce(
+          row_data ->> 'shift_type_id', row_data ->> 'shift_id',
+          row_data ->> 'schedule_type_id', row_data ->> 'assignment_type_id',
+          row_data #>> '{shift,id}'
+        );
+        shift_definition := null;
+        -- В published_shift_assignments обычно хранится UUID типа смены, а
+        -- видимые «Утро / Вечер / Выходной / Отпуск / Больничный» лежат в
+        -- справочнике типов. Без этого JOIN любой UUID ошибочно считался работой.
+        if shift_reference is not null then
+          for shift_dictionary in
+            select table_name
+            from information_schema.columns
+            where table_schema = 'public'
+              and column_name = 'id'
+              and table_name ~* '(shift.*(type|template)|schedule.*type|work.*type)'
+            order by case when table_name = 'shift_types' then 0 else 1 end, table_name
+          loop
+            begin
+              execute format(
+                'select to_jsonb(t) from public.%I t where t.id::text = $1 limit 1',
+                shift_dictionary.table_name
+              ) into shift_definition using shift_reference;
+              if shift_definition is not null then exit; end if;
+            exception when others then
+              continue;
+            end;
+          end loop;
+        end if;
         if schedule_data is not null then
           if jsonb_typeof(schedule_data) = 'array' then
             shift_value := schedule_data ->> (day_index - 1);
@@ -229,14 +261,20 @@ begin
         shift_value := coalesce(
           shift_value,
           row_data ->> day_key_en, row_data ->> day_key_ru,
-          case when lower(coalesce(row_data ->> 'is_working', 'true')) in ('false', '0', 'нет') then 'off' end,
-          case when lower(coalesce(row_data ->> 'is_day_off', 'false')) in ('true', '1', 'да') then 'day off' end,
+          case when lower(coalesce(row_data ->> 'is_working', row_data #>> '{shift,is_working}', 'true')) in ('false', '0', 'нет') then 'off' end,
+          case when lower(coalesce(row_data ->> 'is_day_off', row_data #>> '{shift,is_day_off}', 'false')) in ('true', '1', 'да') then 'day off' end,
           case when direct_date_match then coalesce(
-            row_data ->> 'status', row_data ->> 'shift_type',
-            row_data ->> 'assignment_type', row_data ->> 'shift_name',
+            shift_definition ->> 'status', shift_definition ->> 'shift_type',
+            shift_definition ->> 'name', shift_definition ->> 'title',
+            shift_definition ->> 'label', shift_definition ->> 'code',
+            shift_definition ->> 'type',
+            case when lower(coalesce(shift_definition ->> 'is_working', 'true')) in ('false', '0', 'нет') then 'off' end,
+            row_data ->> 'status', row_data ->> 'assignment_type',
+            row_data ->> 'shift_name', row_data ->> 'shift_code',
             row_data ->> 'label', row_data ->> 'code', row_data ->> 'type',
             row_data #>> '{shift,status}', row_data #>> '{shift,type}',
             row_data #>> '{shift,name}', row_data #>> '{shift,label}',
+            row_data ->> 'shift_type',
             'working'
           ) end
         );
