@@ -437,7 +437,7 @@ const NON_WORKING_SHIFT_VALUES = new Set([
   '', '-', '—', '0', 'false', 'нет',
 ]);
 const NON_WORKING_SHIFT_MARKERS = [
-  'выход', 'вых', 'отпуск', 'отп.', 'больнич', 'не работ',
+  'выход', 'вых', 'отпуск', 'отп.', 'отгул', 'больнич', 'б/л', 'болен', 'не работ', 'нерабоч',
   'day off', 'weekend', 'vacation', 'sick', 'absence',
 ];
 
