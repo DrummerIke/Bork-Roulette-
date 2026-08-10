@@ -412,7 +412,7 @@ async function renderStats() {
   const workingIds = new Set((scheduleResult.data || []).map((row) => row.employee_id));
   // Работавшие берутся только из общего «Графика работы». Сам факт отправки
   // номера и присутствие в офисе не меняют рабочий статус сотрудника.
-  const scheduleAvailable = !scheduleResult.error && (workingIds.size > 0 || filled.length === 0);
+  const scheduleAvailable = !scheduleResult.error;
   const working = scheduleAvailable
     ? state.employees.filter((employee) => workingIds.has(employee.id))
     : [];
@@ -631,16 +631,16 @@ async function loadWorkingEmployees(date) {
   // Security-definer RPC видит рабочий график даже тогда, когда его таблица
   // скрыта от anon и поэтому отсутствует в PostgREST OpenAPI.
   const unifiedResult = await supabase.rpc(UNIFIED_SCHEDULE_RPC, { p_work_date: date });
-  if (!unifiedResult.error && unifiedResult.data?.length) {
-    const sources = [...new Set(unifiedResult.data.map((row) => row.source_table).filter(Boolean))];
-    return { data: unifiedResult.data, error: null, table: sources.join(', ') || `${UNIFIED_SCHEDULE_RPC}()` };
+  if (!unifiedResult.error) {
+    const rows = unifiedResult.data || [];
+    const sources = [...new Set(rows.map((row) => row.source_table).filter(Boolean))];
+    // Пустой результат тоже валиден: в выбранный день мог не работать ни один ПК.
+    return { data: rows, error: null, table: sources.join(', ') || `${UNIFIED_SCHEDULE_RPC}()` };
   }
 
-  // «График работы» и «Офис» — разные наборы данных. office_shifts намеренно
-  // не используется: присутствие в офисе не означает рабочую смену и наоборот.
-  const discovered = await loadDiscoveredSchedule(date);
-  if (discovered) return discovered;
-  const rpcMissing = unifiedResult.error && /schema cache|could not find the function/i.test(unifiedResult.error.message || '');
+  // После появления точного контракта G7 не подменяем опубликованный график
+  // эвристическим поиском других таблиц.
+  const rpcMissing = /schema cache|could not find the function/i.test(unifiedResult.error.message || '');
   return {
     data: null,
     error: rpcMissing
