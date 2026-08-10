@@ -10,6 +10,9 @@ export function createClient(url, anonKey, options = {}) {
     from(table) {
       return new QueryBuilder(baseUrl, table, baseHeaders);
     },
+    schema() {
+      return new QueryBuilder(baseUrl, '', baseHeaders);
+    },
     rpc(functionName, args = {}) {
       const query = new QueryBuilder(baseUrl, `rpc/${encodeURIComponent(functionName)}`, baseHeaders);
       query.method = 'POST';

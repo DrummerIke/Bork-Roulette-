@@ -425,7 +425,7 @@ async function renderStats() {
   const missing = working.filter((employee) => !filledByEmployee[employee.id]);
 
   $('statsSummary').innerHTML = scheduleAvailable
-    ? `<span>Заполнили: ${filled.length}</span><span>Работали: ${working.length}</span><span>Не заполнили из работавших: ${missing.length}</span>`
+    ? `<span>Заполнили: ${filled.length}</span><span>Работали: ${working.length}</span><span>Не заполнили из работавших: ${missing.length}</span><span>Источник: ${scheduleResult.table || 'RPC'}</span>`
     : `<span>Заполнили: ${filled.length}</span><span>График недоступен</span>`;
   $('filledList').innerHTML = filled.length
     ? filled.map((employee) => `<article class="person filled"><strong>${employee.name}</strong><small>${filledByEmployee[employee.id].join(', ')}</small></article>`).join('')
@@ -571,6 +571,88 @@ function scheduleRowContainsDate(row, date) {
   });
 }
 
+function getWeekStartIso(date) {
+  const value = fromIsoDate(date);
+  const day = value.getDay() || 7;
+  value.setDate(value.getDate() - day + 1);
+  return toLocalIso(value);
+}
+
+function parseScheduleDate(value) {
+  const text = String(value ?? '').trim();
+  const iso = text.match(/(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/);
+  if (iso) return `${iso[1]}-${pad(iso[2])}-${pad(iso[3])}`;
+  const ru = text.match(/(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})/);
+  return ru ? `${ru[3]}-${pad(ru[2])}-${pad(ru[1])}` : '';
+}
+
+function normalizeWeeklyScheduleRows(rows, date) {
+  const selectedWeek = getWeekStartIso(date);
+  const dayIndex = (fromIsoDate(date).getDay() || 7) - 1;
+  const dayNames = [
+    ['monday', 'mon', 'понедельник', 'пн'],
+    ['tuesday', 'tue', 'вторник', 'вт'],
+    ['wednesday', 'wed', 'среда', 'ср'],
+    ['thursday', 'thu', 'четверг', 'чт'],
+    ['friday', 'fri', 'пятница', 'пт'],
+    ['saturday', 'sat', 'суббота', 'сб'],
+    ['sunday', 'sun', 'воскресенье', 'вс'],
+  ];
+
+  const candidates = rows.filter((row) => {
+    const weekValue = row.week_start ?? row.week ?? row.start_date ?? row.week_start_date;
+    return !weekValue || parseScheduleDate(weekValue) === selectedWeek;
+  }).map((row) => {
+    const schedule = row.schedule ?? row.shifts ?? row.week_data ?? row.days;
+    let shiftValue;
+    if (Array.isArray(schedule)) shiftValue = schedule[dayIndex];
+    if (schedule && typeof schedule === 'object' && !Array.isArray(schedule)) {
+      const dayKey = dayNames[dayIndex].find((key) => key in schedule);
+      shiftValue = dayKey ? schedule[dayKey] : schedule[String(dayIndex + 1)];
+    }
+    if (shiftValue === undefined) {
+      const dayKey = dayNames[dayIndex].find((key) => key in row);
+      shiftValue = dayKey ? row[dayKey] : undefined;
+    }
+    return {
+      employee_id: row.employee_id ?? row.consultant_id ?? row.user_id ?? row.staff_id ?? row.employee?.id,
+      employee_name: row.employee_name ?? row.full_name ?? row.name ?? row.employee?.name,
+      status: typeof shiftValue === 'object' ? shiftValue?.status ?? shiftValue?.type ?? shiftValue?.shift : shiftValue,
+    };
+  }).filter((row) => row.status !== undefined && !isNonWorkingScheduleValue(row.status));
+
+  return normalizeWorkingShifts(candidates);
+}
+
+function normalizeScheduleRows(rows, date) {
+  const datedRows = rows.filter((row) => scheduleRowContainsDate(row, date));
+  const direct = normalizeWorkingShifts(datedRows);
+  const generic = direct.length ? direct : normalizeGenericColumnRows(datedRows);
+  if (generic.length) return generic;
+  return normalizeWeeklyScheduleRows(rows, date);
+}
+
+async function discoverScheduleTables() {
+  const { data, error } = await supabase.schema();
+  if (error) return [];
+  return [...new Set(Object.keys(data?.paths || {})
+    .map((path) => path.replace(/^\//, ''))
+    .filter((name) => name && !name.startsWith('rpc/') && /(schedule|shift|work|граф|смен)/i.test(name)))]
+    .filter((name) => ![TABLE_ENTRIES, TABLE_DRAWS, OFFICE_SHIFTS_TABLE].includes(name))
+    .sort((a, b) => Number(/office/i.test(a)) - Number(/office/i.test(b)));
+}
+
+async function loadDiscoveredSchedule(date) {
+  const tables = await discoverScheduleTables();
+  for (const table of tables) {
+    const result = await supabase.from(table).select('*');
+    if (result.error) continue;
+    const employees = normalizeScheduleRows(result.data || [], date);
+    if (employees.length) return { data: employees, error: null, table };
+  }
+  return null;
+}
+
 function describeScheduleRows(rows) {
   if (!rows.length) return `Таблица ${OFFICE_SHIFTS_TABLE} доступна, но в ней нет строк`;
   const keys = [...new Set(rows.slice(0, 5).flatMap((row) => Object.keys(row)))].slice(0, 20);
@@ -585,6 +667,11 @@ function describeScheduleRows(rows) {
 }
 
 async function loadWorkingEmployees(date) {
+  // «График работы» и «Офис» — разные наборы данных. Сначала автоматически
+  // ищем таблицу рабочего графика, а office_shifts используем лишь как fallback.
+  const discovered = await loadDiscoveredSchedule(date);
+  if (discovered) return discovered;
+
   const rpcResult = await supabase.rpc(WORKING_EMPLOYEES_RPC, { p_work_date: date });
 
   // Для таблиц col1…col6 сервер не знает, какой столбец содержит сотрудника.
@@ -606,7 +693,7 @@ async function loadWorkingEmployees(date) {
       if (result.data?.length && !normalized.length) {
         return { data: null, error: { message: 'В строках office_shifts не найден сотрудник' } };
       }
-      return { data: normalized, error: null };
+      return { data: normalized, error: null, table: OFFICE_SHIFTS_TABLE };
     }
     if (!result.error) continue;
     directError = result.error;
@@ -618,20 +705,18 @@ async function loadWorkingEmployees(date) {
   const broadResult = await supabase.from(OFFICE_SHIFTS_TABLE).select('*');
   if (!broadResult.error) {
     const allRows = broadResult.data || [];
-    const datedRows = allRows.filter((row) => scheduleRowContainsDate(row, date));
-    const normalized = normalizeWorkingShifts(datedRows);
-    const genericColumns = normalized.length ? normalized : normalizeGenericColumnRows(datedRows);
-    if (genericColumns.length) return { data: genericColumns, error: null };
+    const genericColumns = normalizeScheduleRows(allRows, date);
+    if (genericColumns.length) return { data: genericColumns, error: null, table: OFFICE_SHIFTS_TABLE };
 
     // Недельную матрицу рассматриваем только после поиска реальной даты. Раньше
     // эта ветка срабатывала первой и ошибочно принимала служебные col2…col6 за дни.
     const hasColumnMatrix = allRows.some((row) => ['col1', 'col2', 'col3', 'col4', 'col5', 'col6'].every((key) => key in row));
     if (hasColumnMatrix) {
       const matrixEmployees = normalizeColumnMatrixShifts(allRows, date);
-      if (matrixEmployees.length) return { data: matrixEmployees, error: null };
+      if (matrixEmployees.length) return { data: matrixEmployees, error: null, table: OFFICE_SHIFTS_TABLE };
     }
 
-    if (!rpcResult.error && rpcResult.data?.length) return rpcResult;
+    if (!rpcResult.error && rpcResult.data?.length) return { ...rpcResult, table: `${WORKING_EMPLOYEES_RPC}()` };
     return {
       data: null,
       error: { message: `За ${toRuDate(date)} рабочие строки не найдены. ${describeScheduleRows(allRows)}` },
@@ -643,6 +728,7 @@ async function loadWorkingEmployees(date) {
     error: !rpcResult.error && rpcResult.data?.length
       ? null
       : broadResult.error || directError || rpcResult.error || { message: 'График на выбранную дату не найден' },
+    table: !rpcResult.error && rpcResult.data?.length ? `${WORKING_EMPLOYEES_RPC}()` : null,
   };
 }
 
