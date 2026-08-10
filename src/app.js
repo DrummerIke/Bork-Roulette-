@@ -7,6 +7,7 @@ const TABLE_DRAWS = 'roulette_draws';
 const EMPLOYEES_TABLE = 'employees';
 const OFFICE_SHIFTS_TABLE = window.BORK_OFFICE_SHIFTS_TABLE || 'office_shifts';
 const WORKING_EMPLOYEES_RPC = 'get_roulette_working_employees';
+const UNIFIED_SCHEDULE_RPC = 'get_roulette_unified_working_employees';
 const DRAW_POSITION = 'Personal Consultant';
 const MONTHS = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'];
 const WEEKDAYS = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'];
@@ -667,6 +668,14 @@ function describeScheduleRows(rows) {
 }
 
 async function loadWorkingEmployees(date) {
+  // Security-definer RPC видит рабочий график даже тогда, когда его таблица
+  // скрыта от anon и поэтому отсутствует в PostgREST OpenAPI.
+  const unifiedResult = await supabase.rpc(UNIFIED_SCHEDULE_RPC, { p_work_date: date });
+  if (!unifiedResult.error && unifiedResult.data?.length) {
+    const sources = [...new Set(unifiedResult.data.map((row) => row.source_table).filter(Boolean))];
+    return { data: unifiedResult.data, error: null, table: sources.join(', ') || `${UNIFIED_SCHEDULE_RPC}()` };
+  }
+
   // «График работы» и «Офис» — разные наборы данных. Сначала автоматически
   // ищем таблицу рабочего графика, а office_shifts используем лишь как fallback.
   const discovered = await loadDiscoveredSchedule(date);
