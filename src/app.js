@@ -640,9 +640,12 @@ async function loadWorkingEmployees(date) {
   // не используется: присутствие в офисе не означает рабочую смену и наоборот.
   const discovered = await loadDiscoveredSchedule(date);
   if (discovered) return discovered;
+  const rpcMissing = unifiedResult.error && /schema cache|could not find the function/i.test(unifiedResult.error.message || '');
   return {
     data: null,
-    error: unifiedResult.error || { message: `За ${toRuDate(date)} единый «График работы» не найден. Данные «Офис» не используются.` },
+    error: rpcMissing
+      ? { message: 'В Supabase не установлена функция чтения общего графика. Выполните файл supabase-schedule-fix.sql в SQL Editor и обновите страницу.' }
+      : unifiedResult.error || { message: `За ${toRuDate(date)} единый «График работы» не найден. Данные «Офис» не используются.` },
     table: null,
   };
 }

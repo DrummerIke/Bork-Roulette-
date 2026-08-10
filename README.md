@@ -4,9 +4,9 @@
 
 ## Настройка Supabase
 
-> **Обязательно после этого обновления:** откройте Supabase → SQL Editor, вставьте весь актуальный `supabase.sql`, нажмите **Run**, дождитесь `Success`, затем перезагрузите страницу Google Sites. Ошибка `Could not find the function public.get_roulette_employees` означает, что этот SQL ещё не был выполнен в используемом Supabase-проекте.
+> **Обязательно после этого обновления:** откройте Supabase → SQL Editor и выполните небольшой файл `supabase-schedule-fix.sql` (либо весь актуальный `supabase.sql`), дождитесь `Success`, затем перезагрузите страницу Google Sites. Ошибка `Could not find the function public.get_roulette_employees` означает, что этот SQL ещё не был выполнен в используемом Supabase-проекте.
 
-1. Выполните SQL из `supabase.sql` в Supabase SQL Editor.
+1. Для существующего проекта выполните `supabase-schedule-fix.sql` в Supabase SQL Editor. Он только создаёт функцию чтения общего графика и обновляет schema cache; строки и таблицы других приложений не меняются. Для новой установки можно вместо него выполнить полный `supabase.sql`.
 2. Убедитесь, что таблица `public.employees` содержит поля `id uuid`, `name text` и `Position text`. Также поддерживается переименованный столбец `position` или `role`; для участия в форме и отборе его значение должно быть `Personal Consultant` (регистр и случайные пробелы виджет нормализует).
 3. Статистика определяет «кто работал» исключительно по единому семидневному «Графику работы»: сначала через security-definer RPC `get_roulette_unified_working_employees`, затем через OpenAPI-обнаружение его таблицы. `public.office_shifts` относится к вкладке «Офис» и полностью исключён из расчёта. Факт отправки номера также не делает сотрудника работавшим. В результат попадают только `Personal Consultant`; лидеры, выходные, отпуск и больничный исключаются.
 4. Виджет уже содержит текущий публичный Supabase URL как fallback. Если ключ нужно заменить, в Google Sites перед `src/app.js` задайте публичные ключи проекта:
