@@ -5,8 +5,6 @@ const SUPABASE_ANON_KEY = window.BORK_SUPABASE_ANON_KEY || window.NEXT_PUBLIC_SU
 const TABLE_ENTRIES = 'roulette_phone_entries';
 const TABLE_DRAWS = 'roulette_draws';
 const EMPLOYEES_TABLE = 'employees';
-const OFFICE_SHIFTS_TABLE = window.BORK_OFFICE_SHIFTS_TABLE || 'office_shifts';
-const WORKING_EMPLOYEES_RPC = 'get_roulette_working_employees';
 const UNIFIED_SCHEDULE_RPC = 'get_roulette_unified_working_employees';
 const DRAW_POSITION = 'Personal Consultant';
 const MONTHS = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'];
@@ -412,13 +410,8 @@ async function renderStats() {
   }, {});
   const filled = state.employees.filter((employee) => filledByEmployee[employee.id]);
   const workingIds = new Set((scheduleResult.data || []).map((row) => row.employee_id));
-  // Отправленный номер — дополнительное подтверждение, что консультант работал.
-  // Это не позволяет частично распознанной матрице показать «работали: 5» при
-  // пятнадцати фактически заполнивших. Лидеры сюда не попадут: filled уже
-  // сформирован только из state.employees с ролью Personal Consultant.
-  filled.forEach((employee) => workingIds.add(employee.id));
-  // Если кто-то уже отправил номер, но график вернул ноль сотрудников, ответ
-  // графика нельзя считать достоверным и тем более писать «все заполнили».
+  // Работавшие берутся только из общего «Графика работы». Сам факт отправки
+  // номера и присутствие в офисе не меняют рабочий статус сотрудника.
   const scheduleAvailable = !scheduleResult.error && (workingIds.size > 0 || filled.length === 0);
   const working = scheduleAvailable
     ? state.employees.filter((employee) => workingIds.has(employee.id))
@@ -426,8 +419,8 @@ async function renderStats() {
   const missing = working.filter((employee) => !filledByEmployee[employee.id]);
 
   $('statsSummary').innerHTML = scheduleAvailable
-    ? `<span>Заполнили: ${filled.length}</span><span>Работали: ${working.length}</span><span>Не заполнили из работавших: ${missing.length}</span><span>Источник: ${scheduleResult.table || 'RPC'}</span>`
-    : `<span>Заполнили: ${filled.length}</span><span>График недоступен</span>`;
+    ? `<span>Заполнили номера: ${filled.length}</span><span>Работали по графику: ${working.length}</span><span>Не заполнили из работавших: ${missing.length}</span><span>Источник: ${scheduleResult.table || 'RPC'}</span>`
+    : `<span>Заполнили номера: ${filled.length}</span><span>График работы недоступен</span>`;
   $('filledList').innerHTML = filled.length
     ? filled.map((employee) => `<article class="person filled"><strong>${employee.name}</strong><small>${filledByEmployee[employee.id].join(', ')}</small></article>`).join('')
     : '<p class="empty-state">Пока никто не заполнил.</p>';
@@ -438,7 +431,6 @@ async function renderStats() {
       : '<p class="empty-state">Все работавшие сотрудники заполнили.</p>';
 }
 
-const MISSING_COLUMN_CODES = new Set(['42703', 'PGRST204']);
 const NON_WORKING_SHIFT_VALUES = new Set([
   'off', 'day off', 'weekend', 'vacation', 'sick',
   'выходной', 'вых', 'в', 'отпуск', 'отп', 'о', 'больничный', 'бл', 'б', 'не работает',
@@ -485,25 +477,6 @@ function detectEmployeeColumn(rows) {
     .map((column) => ({ column, matches: rows.filter((row) => findEmployeeByReference(row[column])).length }))
     .sort((a, b) => b.matches - a.matches)[0];
   return result?.matches ? result.column : null;
-}
-
-function normalizeColumnMatrixShifts(rows, date) {
-  const weekDay = fromIsoDate(date).getDay();
-  if (weekDay < 1 || weekDay > 5) return [];
-
-  const columns = ['col1', 'col2', 'col3', 'col4', 'col5', 'col6'];
-  const employeeColumn = detectEmployeeColumn(rows);
-  if (!employeeColumn) return [];
-
-  const weekdayColumns = columns.filter((column) => column !== employeeColumn);
-  const shiftColumn = weekdayColumns[weekDay - 1];
-  const workingRows = rows
-    .filter((row) => !isNonWorkingScheduleValue(row[shiftColumn]))
-    .map((row) => {
-      const employee = findEmployeeByReference(row[employeeColumn]);
-      return { employee_id: employee?.id, status: row[shiftColumn] };
-    });
-  return normalizeWorkingShifts(workingRows);
 }
 
 function normalizeGenericColumnRows(rows) {
@@ -639,7 +612,7 @@ async function discoverScheduleTables() {
   return [...new Set(Object.keys(data?.paths || {})
     .map((path) => path.replace(/^\//, ''))
     .filter((name) => name && !name.startsWith('rpc/') && /(schedule|shift|work|граф|смен)/i.test(name)))]
-    .filter((name) => ![TABLE_ENTRIES, TABLE_DRAWS, OFFICE_SHIFTS_TABLE].includes(name))
+    .filter((name) => ![TABLE_ENTRIES, TABLE_DRAWS, 'office_shifts'].includes(name))
     .sort((a, b) => Number(/office/i.test(a)) - Number(/office/i.test(b)));
 }
 
@@ -654,19 +627,6 @@ async function loadDiscoveredSchedule(date) {
   return null;
 }
 
-function describeScheduleRows(rows) {
-  if (!rows.length) return `Таблица ${OFFICE_SHIFTS_TABLE} доступна, но в ней нет строк`;
-  const keys = [...new Set(rows.slice(0, 5).flatMap((row) => Object.keys(row)))].slice(0, 20);
-  const dateSamples = JSON.stringify(rows.slice(0, 20)).match(/\d{4}[-/.]\d{1,2}[-/.]\d{1,2}|\d{1,2}[-/.]\d{1,2}[-/.]\d{4}/g) || [];
-  const samples = [...new Set(dateSamples)].slice(0, 5);
-  const matrixSample = rows.slice(0, 2).map((row) =>
-    ['col1', 'col2', 'col3', 'col4', 'col5', 'col6']
-      .filter((key) => key in row)
-      .map((key) => `${key}=${String(row[key] ?? '').slice(0, 28)}`)
-      .join(', ')).filter(Boolean).join(' | ');
-  return `Прочитано строк: ${rows.length}. Поля: ${keys.join(', ') || 'не определены'}. Примеры дат: ${samples.join(', ') || 'не найдены'}. Пример матрицы: ${matrixSample || 'нет'}`;
-}
-
 async function loadWorkingEmployees(date) {
   // Security-definer RPC видит рабочий график даже тогда, когда его таблица
   // скрыта от anon и поэтому отсутствует в PostgREST OpenAPI.
@@ -676,68 +636,14 @@ async function loadWorkingEmployees(date) {
     return { data: unifiedResult.data, error: null, table: sources.join(', ') || `${UNIFIED_SCHEDULE_RPC}()` };
   }
 
-  // «График работы» и «Офис» — разные наборы данных. Сначала автоматически
-  // ищем таблицу рабочего графика, а office_shifts используем лишь как fallback.
+  // «График работы» и «Офис» — разные наборы данных. office_shifts намеренно
+  // не используется: присутствие в офисе не означает рабочую смену и наоборот.
   const discovered = await loadDiscoveredSchedule(date);
   if (discovered) return discovered;
-
-  const rpcResult = await supabase.rpc(WORKING_EMPLOYEES_RPC, { p_work_date: date });
-
-  // Для таблиц col1…col6 сервер не знает, какой столбец содержит сотрудника.
-  // Поэтому прямое чтение проверяем даже при непустом RPC и используем каталог
-  // employees для определения структуры. RPC остаётся резервом при запрете SELECT.
-  const dateColumns = ['shift_date', 'date', 'work_date', 'day', 'start_at', 'starts_at'];
-  const nextDate = fromIsoDate(date);
-  nextDate.setDate(nextDate.getDate() + 1);
-  const nextDateIso = toLocalIso(nextDate);
-  let directError = null;
-  for (const dateColumn of dateColumns) {
-    const result = await supabase
-      .from(OFFICE_SHIFTS_TABLE)
-      .select('*')
-      .gte(dateColumn, date)
-      .lt(dateColumn, nextDateIso);
-    if (!result.error && result.data?.length) {
-      const normalized = normalizeWorkingShifts(result.data || []);
-      if (result.data?.length && !normalized.length) {
-        return { data: null, error: { message: 'В строках office_shifts не найден сотрудник' } };
-      }
-      return { data: normalized, error: null, table: OFFICE_SHIFTS_TABLE };
-    }
-    if (!result.error) continue;
-    directError = result.error;
-    if (!MISSING_COLUMN_CODES.has(result.error.code)) break;
-  }
-
-  // Последняя ступень поддерживает графики, где дни лежат внутри JSON/массива
-  // или записаны как ДД-ММ-ГГГГ. Забираем строки и ищем дату во всей записи.
-  const broadResult = await supabase.from(OFFICE_SHIFTS_TABLE).select('*');
-  if (!broadResult.error) {
-    const allRows = broadResult.data || [];
-    const genericColumns = normalizeScheduleRows(allRows, date);
-    if (genericColumns.length) return { data: genericColumns, error: null, table: OFFICE_SHIFTS_TABLE };
-
-    // Недельную матрицу рассматриваем только после поиска реальной даты. Раньше
-    // эта ветка срабатывала первой и ошибочно принимала служебные col2…col6 за дни.
-    const hasColumnMatrix = allRows.some((row) => ['col1', 'col2', 'col3', 'col4', 'col5', 'col6'].every((key) => key in row));
-    if (hasColumnMatrix) {
-      const matrixEmployees = normalizeColumnMatrixShifts(allRows, date);
-      if (matrixEmployees.length) return { data: matrixEmployees, error: null, table: OFFICE_SHIFTS_TABLE };
-    }
-
-    if (!rpcResult.error && rpcResult.data?.length) return { ...rpcResult, table: `${WORKING_EMPLOYEES_RPC}()` };
-    return {
-      data: null,
-      error: { message: `За ${toRuDate(date)} рабочие строки не найдены. ${describeScheduleRows(allRows)}` },
-    };
-  }
-
   return {
-    data: !rpcResult.error && rpcResult.data?.length ? rpcResult.data : null,
-    error: !rpcResult.error && rpcResult.data?.length
-      ? null
-      : broadResult.error || directError || rpcResult.error || { message: 'График на выбранную дату не найден' },
-    table: !rpcResult.error && rpcResult.data?.length ? `${WORKING_EMPLOYEES_RPC}()` : null,
+    data: null,
+    error: unifiedResult.error || { message: `За ${toRuDate(date)} единый «График работы» не найден. Данные «Офис» не используются.` },
+    table: null,
   };
 }
 
