@@ -109,6 +109,7 @@ declare
   day_key_en text;
   day_key_ru text;
   day_index int;
+  source_has_rows boolean;
 begin
   week_monday := p_work_date - (extract(isodow from p_work_date)::int - 1);
   day_index := extract(isodow from p_work_date)::int;
@@ -119,18 +120,25 @@ begin
     select tablename
     from pg_catalog.pg_tables
     where schemaname = 'public'
-      and (
-        tablename ~* '(schedule|shift|work|roster|timetable|граф|смен)'
-        or exists (
-          select 1
-          from information_schema.columns as column_info
-          where column_info.table_schema = 'public'
-            and column_info.table_name = pg_tables.tablename
-            and column_info.column_name in ('employee_id', 'consultant_id', 'user_id', 'staff_id', 'week_start', 'week_start_date')
-        )
+      -- Ищем именно таблицы графика. Наличие user_id/employee_id само по себе
+      -- ничего не означает: из-за прежнего условия сюда ошибочно попадали
+      -- preference_access_tokens и другие служебные таблицы.
+      and tablename ~* '(schedule|shift|work|roster|timetable|граф|смен)'
+      and tablename not in (
+        'employees', 'vacations', 'office_shifts',
+        'roulette_phone_entries', 'roulette_draws',
+        'shift_types', 'shift_templates', 'shift_preferences'
       )
-      and tablename not in ('employees', 'vacations', 'office_shifts', 'roulette_phone_entries', 'roulette_draws')
+    order by
+      case
+        when tablename = 'published_shift_assignments' then 0
+        when tablename ~* 'published' then 1
+        when tablename ~* 'assignment' then 2
+        else 3
+      end,
+      tablename
   loop
+    source_has_rows := false;
     begin
       for row_data in execute format('select to_jsonb(t) from public.%I t limit 5000', source.tablename)
       loop
@@ -169,8 +177,18 @@ begin
           end if;
         end if;
         shift_value := coalesce(
-          shift_value, row_data ->> day_key_en, row_data ->> day_key_ru,
-          case when direct_date_match then coalesce(row_data ->> 'status', row_data ->> 'shift_type', row_data ->> 'type', 'working') end
+          shift_value,
+          row_data ->> day_key_en, row_data ->> day_key_ru,
+          case when lower(coalesce(row_data ->> 'is_working', 'true')) in ('false', '0', 'нет') then 'off' end,
+          case when lower(coalesce(row_data ->> 'is_day_off', 'false')) in ('true', '1', 'да') then 'day off' end,
+          case when direct_date_match then coalesce(
+            row_data ->> 'status', row_data ->> 'shift_type',
+            row_data ->> 'assignment_type', row_data ->> 'shift_name',
+            row_data ->> 'label', row_data ->> 'code', row_data ->> 'type',
+            row_data #>> '{shift,status}', row_data #>> '{shift,type}',
+            row_data #>> '{shift,name}', row_data #>> '{shift,label}',
+            'working'
+          ) end
         );
         if shift_value is null then continue; end if;
         if lower(trim(shift_value)) in ('', '-', '—', '0', 'false', 'off', 'day off', 'weekend', 'vacation', 'sick', 'выходной', 'вых', 'в', 'отпуск', 'отп', 'о', 'больничный', 'бл', 'б')
@@ -193,11 +211,16 @@ begin
 
         employee_id := mapped_employee;
         source_table := source.tablename;
+        source_has_rows := true;
         return next;
       end loop;
     exception when others then
       continue;
     end;
+    -- published_shift_assignments является итогом, который показывает вкладка
+    -- «График работы». После первого подходящего источника не смешиваем его с
+    -- черновыми shift_assignments и тем более со служебными таблицами.
+    if source_has_rows then return; end if;
   end loop;
 end;
 $$;
