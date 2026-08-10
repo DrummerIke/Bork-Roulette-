@@ -151,13 +151,16 @@ declare
   employee_value text;
   employee_name text;
   schedule_data jsonb;
+  schedule_item jsonb;
   shift_value text;
   shift_reference text;
+  shift_reference_column text;
   shift_definition jsonb;
   shift_dictionary record;
   mapped_employee uuid;
   week_monday date;
   direct_date_match boolean;
+  top_level_date_match boolean;
   week_match boolean;
   day_key_en text;
   day_key_ru text;
@@ -201,6 +204,14 @@ begin
           row_text like ('%' || to_char(p_work_date, 'DD-MM-YYYY') || '%') or
           row_text like ('%' || to_char(p_work_date, 'DD.MM.YYYY') || '%') or
           row_text like ('%' || to_char(p_work_date, 'DD/MM/YYYY') || '%');
+        top_level_date_match := coalesce(
+          row_data ->> 'work_date', row_data ->> 'shift_date',
+          row_data ->> 'assignment_date', row_data ->> 'entry_date',
+          row_data ->> 'date'
+        ) in (
+          to_char(p_work_date, 'YYYY-MM-DD'), to_char(p_work_date, 'DD-MM-YYYY'),
+          to_char(p_work_date, 'DD.MM.YYYY'), to_char(p_work_date, 'DD/MM/YYYY')
+        );
         week_match :=
           row_text like ('%' || to_char(week_monday, 'YYYY-MM-DD') || '%') or
           row_text like ('%' || to_char(week_monday, 'DD.MM.YYYY') || '%') or
@@ -216,30 +227,118 @@ begin
           row_data ->> 'employee_name', row_data ->> 'full_name',
           row_data ->> 'name', row_data #>> '{employee,name}'
         );
-        schedule_data := coalesce(row_data -> 'schedule', row_data -> 'shifts', row_data -> 'week_data', row_data -> 'days');
+        schedule_data := coalesce(
+          row_data -> 'assignments', row_data -> 'schedule_assignments',
+          row_data -> 'schedule', row_data -> 'shifts',
+          row_data -> 'week_data', row_data -> 'schedule_data', row_data -> 'days'
+        );
         shift_value := null;
         shift_reference := coalesce(
           row_data ->> 'shift_type_id', row_data ->> 'shift_id',
           row_data ->> 'schedule_type_id', row_data ->> 'assignment_type_id',
           row_data #>> '{shift,id}'
         );
+        shift_reference_column := case
+          when row_data ? 'shift_type_id' then 'shift_type_id'
+          when row_data ? 'shift_id' then 'shift_id'
+          when row_data ? 'schedule_type_id' then 'schedule_type_id'
+          when row_data ? 'assignment_type_id' then 'assignment_type_id'
+          else null
+        end;
         shift_definition := null;
-        -- В published_shift_assignments обычно хранится UUID типа смены, а
-        -- видимые «Утро / Вечер / Выходной / Отпуск / Больничный» лежат в
-        -- справочнике типов. Без этого JOIN любой UUID ошибочно считался работой.
+        if schedule_data is not null then
+          if jsonb_typeof(schedule_data) = 'array' then
+            -- Массив может быть либо семью значениями, либо объектами
+            -- {date, shift_type_id/...}. Ищем именно выбранную дату.
+            for schedule_item in select value from jsonb_array_elements(schedule_data)
+            loop
+              if schedule_item::text like ('%' || to_char(p_work_date, 'YYYY-MM-DD') || '%')
+                 or schedule_item::text like ('%' || to_char(p_work_date, 'DD.MM.YYYY') || '%')
+              then
+                shift_reference := coalesce(
+                  schedule_item ->> 'shift_type_id', schedule_item ->> 'shift_id',
+                  schedule_item ->> 'schedule_type_id', schedule_item #>> '{shift,id}',
+                  shift_reference
+                );
+                shift_reference_column := coalesce(
+                  case
+                    when schedule_item ? 'shift_type_id' then 'shift_type_id'
+                    when schedule_item ? 'shift_id' then 'shift_id'
+                    when schedule_item ? 'schedule_type_id' then 'schedule_type_id'
+                    else null
+                  end,
+                  shift_reference_column
+                );
+                shift_value := coalesce(
+                  schedule_item ->> 'status', schedule_item ->> 'shift_type',
+                  schedule_item ->> 'type', schedule_item ->> 'name',
+                  schedule_item ->> 'label', schedule_item ->> 'code',
+                  schedule_item #>> '{shift,status}', schedule_item #>> '{shift,name}'
+                );
+                exit;
+              end if;
+            end loop;
+            if shift_value is null and shift_reference is null and jsonb_array_length(schedule_data) = 7 then
+              shift_value := schedule_data ->> (day_index - 1);
+            end if;
+          elsif jsonb_typeof(schedule_data) = 'object' then
+            -- В опубликованном недельном графике ключом часто является сама дата.
+            shift_value := coalesce(
+              schedule_data ->> to_char(p_work_date, 'YYYY-MM-DD'),
+              schedule_data ->> to_char(p_work_date, 'DD.MM.YYYY'),
+              schedule_data ->> day_key_en,
+              schedule_data ->> day_key_ru,
+              schedule_data ->> day_index::text
+            );
+            if shift_value ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then
+              shift_reference := shift_value;
+              shift_value := null;
+            end if;
+          end if;
+        end if;
+        -- В published_shift_assignments видимый тип смены может храниться
+        -- отдельным UUID. Разрешаем его через справочник после разбора JSON.
         if shift_reference is not null then
+          -- Сначала следуем реальному внешнему ключу assignment -> справочник.
+          -- Это не зависит от названия справочника в конкретном проекте.
+          if shift_reference_column is not null then
+            select target_ns.nspname as table_schema, target.relname as table_name
+              into shift_dictionary
+            from pg_catalog.pg_constraint as fk
+            join pg_catalog.pg_attribute as source_column
+              on source_column.attrelid = fk.conrelid
+             and source_column.attnum = any(fk.conkey)
+            join pg_catalog.pg_class as target on target.oid = fk.confrelid
+            join pg_catalog.pg_namespace as target_ns on target_ns.oid = target.relnamespace
+            where fk.contype = 'f'
+              and fk.conrelid = format('public.%I', source.tablename)::regclass
+              and source_column.attname = shift_reference_column
+            limit 1;
+            if shift_dictionary.table_name is not null then
+              begin
+                execute format(
+                  'select to_jsonb(t) from %I.%I t where t.id::text = $1 limit 1',
+                  shift_dictionary.table_schema, shift_dictionary.table_name
+                ) into shift_definition using shift_reference;
+              exception when others then
+                shift_definition := null;
+              end;
+            end if;
+          end if;
+          -- Резерв для JSON-полей, у которых нет FK на уровне основной таблицы.
           for shift_dictionary in
-            select table_name
+            select table_schema, table_name
             from information_schema.columns
             where table_schema = 'public'
               and column_name = 'id'
-              and table_name ~* '(shift.*(type|template)|schedule.*type|work.*type)'
+              and table_name ~* '(shift.*(type|template|code)|schedule.*type|work.*type)'
+              and shift_definition is null
             order by case when table_name = 'shift_types' then 0 else 1 end, table_name
           loop
             begin
               execute format(
-                'select to_jsonb(t) from public.%I t where t.id::text = $1 limit 1',
-                shift_dictionary.table_name
+                'select to_jsonb(t) from %I.%I t where t.id::text = $1 limit 1',
+                shift_dictionary.table_schema, shift_dictionary.table_name
               ) into shift_definition using shift_reference;
               if shift_definition is not null then exit; end if;
             exception when others then
@@ -247,26 +346,16 @@ begin
             end;
           end loop;
         end if;
-        if schedule_data is not null then
-          if jsonb_typeof(schedule_data) = 'array' then
-            shift_value := schedule_data ->> (day_index - 1);
-          elsif jsonb_typeof(schedule_data) = 'object' then
-            shift_value := coalesce(
-              schedule_data ->> day_key_en,
-              schedule_data ->> day_key_ru,
-              schedule_data ->> day_index::text
-            );
-          end if;
-        end if;
         shift_value := coalesce(
           shift_value,
           row_data ->> day_key_en, row_data ->> day_key_ru,
           case when lower(coalesce(row_data ->> 'is_working', row_data #>> '{shift,is_working}', 'true')) in ('false', '0', 'нет') then 'off' end,
           case when lower(coalesce(row_data ->> 'is_day_off', row_data #>> '{shift,is_day_off}', 'false')) in ('true', '1', 'да') then 'day off' end,
-          case when direct_date_match then coalesce(
+          case when top_level_date_match then coalesce(
             shift_definition ->> 'status', shift_definition ->> 'shift_type',
-            shift_definition ->> 'name', shift_definition ->> 'title',
-            shift_definition ->> 'label', shift_definition ->> 'code',
+            shift_definition ->> 'name', shift_definition ->> 'display_name',
+            shift_definition ->> 'title', shift_definition ->> 'label',
+            shift_definition ->> 'code', shift_definition ->> 'kind',
             shift_definition ->> 'type',
             case when lower(coalesce(shift_definition ->> 'is_working', 'true')) in ('false', '0', 'нет') then 'off' end,
             row_data ->> 'status', row_data ->> 'assignment_type',
@@ -276,6 +365,12 @@ begin
             row_data #>> '{shift,name}', row_data #>> '{shift,label}',
             row_data ->> 'shift_type',
             'working'
+          ) end,
+          case when shift_definition is not null then coalesce(
+            shift_definition ->> 'status', shift_definition ->> 'name',
+            shift_definition ->> 'display_name', shift_definition ->> 'title',
+            shift_definition ->> 'label', shift_definition ->> 'code',
+            shift_definition ->> 'kind', shift_definition ->> 'type'
           ) end
         );
         if shift_value is null then continue; end if;
