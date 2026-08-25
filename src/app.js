@@ -723,6 +723,65 @@ function getChecklistScore(checklist = {}) {
   }, { checked: 0, total: 0 });
 }
 
+function escapeCsvCell(value) {
+  const text = String(value ?? '');
+  return /[;"\r\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
+}
+
+async function loadAllDrawWinners() {
+  const pageSize = 1000;
+  const winnerIds = [];
+  for (let from = 0; ; from += pageSize) {
+    const { data, error } = await supabase
+      .from(TABLE_DRAWS)
+      .select('winner_employee_id')
+      .order('drawn_at', { ascending: true })
+      .range(from, from + pageSize - 1);
+    if (error) return { data: null, error };
+    const page = data || [];
+    winnerIds.push(...page.map((draw) => draw.winner_employee_id));
+    if (page.length < pageSize) break;
+  }
+  return { data: winnerIds, error: null };
+}
+
+async function exportAllTimeDrawStats() {
+  if (!state.rouletteUnlocked) return requestRoulettePassword('stats');
+  const button = $('exportDrawStatsButton');
+  button.disabled = true;
+  button.textContent = 'Формируем…';
+  try {
+    const { data: winnerIds, error } = await loadAllDrawWinners();
+    if (error) return showToast(`Ошибка выгрузки: ${error.message}`);
+
+    const counts = winnerIds.reduce((acc, employeeId) => {
+      acc[employeeId] = (acc[employeeId] || 0) + 1;
+      return acc;
+    }, {});
+    const rows = state.employees
+      .map((employee) => ({ name: employee.name, count: counts[employee.id] || 0 }))
+      .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, 'ru'));
+    const csvRows = [
+      ['Сотрудник', 'Количество попаданий', 'Статус'],
+      ...rows.map((row) => [row.name, row.count, row.count ? 'Попадался' : '0 попаданий']),
+    ];
+    const csv = `\uFEFF${csvRows.map((row) => row.map(escapeCsvCell).join(';')).join('\r\n')}`;
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `статистика_отборов_за_все_время_${toLocalIso(new Date())}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+    const zeroCount = rows.filter((row) => row.count === 0).length;
+    showToast(`Выгрузка готова: сотрудников ${rows.length}, с 0 попаданий — ${zeroCount}`);
+  } finally {
+    button.disabled = false;
+    button.textContent = 'Скачать CSV';
+  }
+}
+
 async function renderDrawResults() {
   if (!state.rouletteUnlocked) return;
   const date = $('resultDateSelect').value;
@@ -820,6 +879,7 @@ function bindUi() {
   $('refreshStatsButton').addEventListener('click', renderStats);
   $('resultDateSelect').addEventListener('change', renderDrawResults);
   $('refreshResultsButton').addEventListener('click', renderDrawResults);
+  $('exportDrawStatsButton').addEventListener('click', exportAllTimeDrawStats);
   $('rouletteLock').addEventListener('click', (event) => {
     if (event.target === $('rouletteLock')) $('rouletteLock').hidden = true;
   });

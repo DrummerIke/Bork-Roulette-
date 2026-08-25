@@ -30,6 +30,8 @@ class QueryBuilder {
     this.params = new URLSearchParams();
     this.method = 'GET';
     this.payload = null;
+    this.rangeFrom = null;
+    this.rangeTo = null;
   }
 
   select(columns = '*') {
@@ -63,6 +65,12 @@ class QueryBuilder {
     return this;
   }
 
+  range(from, to) {
+    this.rangeFrom = from;
+    this.rangeTo = to;
+    return this;
+  }
+
   insert(payload) {
     this.method = 'POST';
     this.payload = payload;
@@ -88,6 +96,7 @@ class QueryBuilder {
         method: this.method,
         headers: {
           ...this.headers,
+          ...(this.rangeFrom !== null ? { Range: `${this.rangeFrom}-${this.rangeTo}` } : {}),
           ...(this.payload ? { 'Content-Type': 'application/json', Prefer: 'return=representation' } : {}),
         },
         body: this.payload ? JSON.stringify(this.payload) : undefined,
