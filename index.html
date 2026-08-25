@@ -88,6 +88,22 @@
 
       <section class="panel" id="statsPanel" aria-labelledby="statsTab">
         <div class="card stats-card">
+          <section class="draw-mode-control">
+            <div class="draw-mode-head">
+              <div>
+                <h2>Режим рандомайзера</h2>
+                <p id="drawModeDescription"></p>
+              </div>
+              <output id="drawModeName" for="drawModeSlider"></output>
+            </div>
+            <input id="drawModeSlider" type="range" min="0" max="2" step="1" value="0" aria-label="Режим рандомайзера" />
+            <div class="draw-mode-labels" aria-hidden="true">
+              <span>Обычный</span>
+              <span>Приоритет меньших</span>
+              <span>Только с 0</span>
+            </div>
+          </section>
+
           <div class="stats-head">
             <label>
               <span>День статистики</span>

@@ -11,6 +11,23 @@ const MONTHS = ['Январь', 'Февраль', 'Март', 'Апрель', '�
 const WEEKDAYS = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'];
 const ROULETTE_PASSWORD = '06062025';
 const PROTECTED_TABS = ['randomizer', 'stats'];
+const DRAW_MODES = [
+  {
+    id: 'normal',
+    name: 'Обычный отбор',
+    description: 'Все сотрудники в текущем пуле имеют равные шансы.',
+  },
+  {
+    id: 'low_priority',
+    name: 'Приоритет меньшего значения',
+    description: 'Семь сотрудников с наименьшим числом сохранённых результатов получают вес отбора на 25% выше.',
+  },
+  {
+    id: 'zero_only',
+    name: 'Только сотрудники с 0',
+    description: 'В отборе участвуют только сотрудники, у которых ещё нет сохранённых результатов.',
+  },
+];
 const CHECKLIST_ITEMS = window.BORK_CHECKLIST_ITEMS || [
   {
     "id": "voice_energy",
@@ -70,7 +87,7 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
 });
 
 const $ = (id) => document.getElementById(id);
-const state = { employees: [], allEmployees: [], currentWinner: null, selectedDate: new Date(), calendarMonth: new Date(), rouletteUnlocked: sessionStorage.getItem('borkRouletteUnlocked') === 'true', pendingProtectedTab: 'randomizer', savePopupTimer: null };
+const state = { employees: [], allEmployees: [], currentWinner: null, selectedDate: new Date(), calendarMonth: new Date(), rouletteUnlocked: sessionStorage.getItem('borkRouletteUnlocked') === 'true', pendingProtectedTab: 'randomizer', savePopupTimer: null, drawMode: localStorage.getItem('borkRouletteDrawMode') || 'normal' };
 
 const pad = (value) => String(value).padStart(2, '0');
 const toLocalIso = (date) => `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
@@ -650,6 +667,64 @@ async function loadWorkingEmployees(date) {
   };
 }
 
+function renderDrawMode() {
+  const modeIndex = Math.max(0, DRAW_MODES.findIndex((mode) => mode.id === state.drawMode));
+  const mode = DRAW_MODES[modeIndex];
+  $('drawModeSlider').value = String(modeIndex);
+  $('drawModeName').textContent = mode.name;
+  $('drawModeDescription').textContent = mode.description;
+}
+
+function changeDrawMode() {
+  const mode = DRAW_MODES[Number($('drawModeSlider').value)] || DRAW_MODES[0];
+  state.drawMode = mode.id;
+  localStorage.setItem('borkRouletteDrawMode', mode.id);
+  renderDrawMode();
+  showToast(`Режим рандомайзера: ${mode.name}`);
+}
+
+function getHistoricalDrawCounts(draws) {
+  return draws.reduce((counts, draw) => {
+    counts[draw.winner_employee_id] = (counts[draw.winner_employee_id] || 0) + 1;
+    return counts;
+  }, {});
+}
+
+function selectWeightedGroup(groups, weights) {
+  const totalWeight = weights.reduce((sum, weight) => sum + weight, 0);
+  let pointer = getRandomIndex(totalWeight);
+  for (let index = 0; index < groups.length; index += 1) {
+    if (pointer < weights[index]) return groups[index];
+    pointer -= weights[index];
+  }
+  return groups.at(-1);
+}
+
+function applyDrawMode(employeeGroups, historicalCounts) {
+  if (state.drawMode === 'zero_only') {
+    const zeroGroups = employeeGroups.filter((group) => !historicalCounts[group[0].employee_id]);
+    return { groups: zeroGroups, weights: zeroGroups.map(() => 100), priorityIds: new Set() };
+  }
+  if (state.drawMode === 'low_priority') {
+    const employeeNames = new Map(state.employees.map((employee) => [employee.id, employee.name]));
+    const priorityIds = new Set([...employeeGroups]
+      .sort((left, right) => {
+        const leftId = left[0].employee_id;
+        const rightId = right[0].employee_id;
+        return (historicalCounts[leftId] || 0) - (historicalCounts[rightId] || 0)
+          || (employeeNames.get(leftId) || '').localeCompare(employeeNames.get(rightId) || '', 'ru');
+      })
+      .slice(0, 7)
+      .map((group) => group[0].employee_id));
+    return {
+      groups: employeeGroups,
+      weights: employeeGroups.map((group) => priorityIds.has(group[0].employee_id) ? 125 : 100),
+      priorityIds,
+    };
+  }
+  return { groups: employeeGroups, weights: employeeGroups.map(() => 100), priorityIds: new Set() };
+}
+
 async function drawWinner() {
   if (!state.rouletteUnlocked) return requestRoulettePassword();
   const selectedPeriod = $('drawDateSelect').value;
@@ -672,13 +747,20 @@ async function drawWinner() {
     return acc;
   }, new Map());
   const employeeGroups = [...entriesByEmployee.values()];
-  const selectedEmployeeEntries = employeeGroups[getRandomIndex(employeeGroups.length)];
+  const { data: historicalDraws, error: historyError } = await loadDrawsForExport('', '');
+  if (historyError) return showToast(`Ошибка истории отборов: ${historyError.message}`);
+  const historicalCounts = getHistoricalDrawCounts(historicalDraws);
+  const modeResult = applyDrawMode(employeeGroups, historicalCounts);
+  if (!modeResult.groups.length) {
+    return showToast('В выбранном пуле нет сотрудников с 0 сохранённых отборов');
+  }
+  const selectedEmployeeEntries = selectWeightedGroup(modeResult.groups, modeResult.weights);
   const winner = selectedEmployeeEntries[getRandomIndex(selectedEmployeeEntries.length)];
   state.currentWinner = winner;
   $('winnerPhone').textContent = winner.phone;
   const winnerEmployee = state.allEmployees.find((employee) => employee.id === winner.employee_id);
   $('winnerEmployee').textContent = winnerEmployee?.name || 'Сотрудник не найден';
-  $('winnerChance').textContent = `Отбор за ${periodDates.map(formatDateOption).join(' / ')}. Сотрудников Personal Consultant: ${employeeGroups.length}. Номеров в пуле: ${eligibleEntries.length}`;
+  $('winnerChance').textContent = `Отбор за ${periodDates.map(formatDateOption).join(' / ')}. Режим: ${DRAW_MODES.find((mode) => mode.id === state.drawMode)?.name}. Участников режима: ${modeResult.groups.length}. Номеров в пуле: ${eligibleEntries.length}. Исторических сохранений сотрудника: ${historicalCounts[winner.employee_id] || 0}`;
   renderChecklist();
   $('drawWorkspace').hidden = false;
   $('drawButton').disabled = true;
@@ -929,6 +1011,7 @@ function bindUi() {
   $('passwordForm').addEventListener('submit', unlockRoulette);
   $('statsDateSelect').addEventListener('change', renderStats);
   $('refreshStatsButton').addEventListener('click', renderStats);
+  $('drawModeSlider').addEventListener('input', changeDrawMode);
   $('resultDateSelect').addEventListener('change', renderDrawResults);
   $('refreshResultsButton').addEventListener('click', renderDrawResults);
   $('drawStatsPeriod').addEventListener('change', toggleDrawStatsInterval);
@@ -945,6 +1028,8 @@ function bindUi() {
 
 async function init() {
   setSelectedDate(new Date());
+  if (!DRAW_MODES.some((mode) => mode.id === state.drawMode)) state.drawMode = 'normal';
+  renderDrawMode();
   bindUi();
   const startupTasks = [
     ['сотрудники', loadEmployees],

@@ -126,6 +126,16 @@ input:focus, select:focus, .date-trigger:focus { border-color: var(--amber); box
   .calendar { width: min(318px, calc(100vw - 48px)); }
 }
 
+.draw-mode-control { display: grid; gap: 14px; border: 1px solid rgba(196,106,45,.5); border-radius: 18px; padding: 18px; background: rgba(5,5,5,.32); }
+.draw-mode-head { display: flex; justify-content: space-between; gap: 16px; align-items: start; }
+.draw-mode-head h2 { margin: 0; color: var(--white); font-size: 15px; letter-spacing: .1em; text-transform: uppercase; }
+.draw-mode-head p { margin: 7px 0 0; color: var(--silver); font-size: 13px; line-height: 1.45; }
+#drawModeName { flex: 0 0 auto; border: 1px solid rgba(240,163,90,.5); border-radius: 999px; padding: 8px 12px; color: var(--amber); font-size: 12px; }
+#drawModeSlider { min-height: 24px; padding: 0; border: 0; border-radius: 0; accent-color: var(--copper); background: transparent; cursor: pointer; }
+.draw-mode-labels { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; color: var(--silver); font-size: 11px; text-transform: uppercase; letter-spacing: .05em; }
+.draw-mode-labels span:nth-child(2) { text-align: center; }
+.draw-mode-labels span:last-child { text-align: right; }
+@media (max-width: 620px) { .draw-mode-head { flex-direction: column; } .draw-mode-labels { font-size: 9px; } }
 .stats-card { display: grid; gap: 18px; }
 .stats-head { display: grid; grid-template-columns: minmax(240px, 1fr) auto; gap: 14px; align-items: end; }
 .stats-summary { display: flex; flex-wrap: wrap; gap: 10px; color: var(--amber); font-size: 13px; letter-spacing: .08em; text-transform: uppercase; }
