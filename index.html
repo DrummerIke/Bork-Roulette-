@@ -113,11 +113,28 @@
           </div>
 
           <section class="all-time-export">
-            <div>
-              <h2>Статистика отборов за всё время</h2>
-              <p>Выгрузка покажет всех Personal Consultant: сколько раз каждый попадался в сохранённых отборах, включая сотрудников с 0 попаданий.</p>
+            <div class="export-copy">
+              <h2>Выгрузка статистики отборов</h2>
+              <p>На первом листе — сводная по сотрудникам, на втором — все попадания с датой, номером клиента и результатом оценки.</p>
             </div>
-            <button type="button" id="exportDrawStatsButton">Скачать CSV</button>
+            <div class="export-controls">
+              <label>
+                <span>Период</span>
+                <select id="drawStatsPeriod">
+                  <option value="all">Всё время</option>
+                  <option value="custom">Выбрать интервал</option>
+                </select>
+              </label>
+              <label class="export-date" hidden>
+                <span>С даты</span>
+                <input id="drawStatsDateFrom" type="date" />
+              </label>
+              <label class="export-date" hidden>
+                <span>По дату</span>
+                <input id="drawStatsDateTo" type="date" />
+              </label>
+              <button type="button" id="exportDrawStatsButton">Скачать Excel</button>
+            </div>
           </section>
 
           <section class="results-section">

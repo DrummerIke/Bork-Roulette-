@@ -55,6 +55,11 @@ class QueryBuilder {
     return this;
   }
 
+  lte(column, value) {
+    this.params.append(column, `lte.${value}`);
+    return this;
+  }
+
   lt(column, value) {
     this.params.append(column, `lt.${value}`);
     return this;

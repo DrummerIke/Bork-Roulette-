@@ -723,62 +723,114 @@ function getChecklistScore(checklist = {}) {
   }, { checked: 0, total: 0 });
 }
 
-function escapeCsvCell(value) {
-  const text = String(value ?? '');
-  return /[;"\r\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
+function escapeXml(value) {
+  return String(value ?? '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&apos;');
 }
 
-async function loadAllDrawWinners() {
+function excelCell(value, type = 'String', style = '') {
+  const styleAttribute = style ? ` ss:StyleID="${style}"` : '';
+  return `<Cell${styleAttribute}><Data ss:Type="${type}">${escapeXml(value)}</Data></Cell>`;
+}
+
+function excelWorksheet(name, rows, widths) {
+  const columns = widths.map((width) => `<Column ss:AutoFitWidth="0" ss:Width="${width}"/>`).join('');
+  const body = rows.map((row, rowIndex) => `<Row>${row.map((cell) => {
+    const value = typeof cell === 'object' ? cell.value : cell;
+    const type = typeof cell === 'object' ? cell.type : 'String';
+    return excelCell(value, type, rowIndex === 0 ? 'Header' : 'Body');
+  }).join('')}</Row>`).join('');
+  return `<Worksheet ss:Name="${escapeXml(name)}"><Table>${columns}${body}</Table><WorksheetOptions xmlns="urn:schemas-microsoft-com:office:excel"><FreezePanes/><FrozenNoSplit/><SplitHorizontal>1</SplitHorizontal><TopRowBottomPane>1</TopRowBottomPane><ActivePane>2</ActivePane></WorksheetOptions></Worksheet>`;
+}
+
+async function loadDrawsForExport(dateFrom, dateTo) {
   const pageSize = 1000;
-  const winnerIds = [];
+  const draws = [];
   for (let from = 0; ; from += pageSize) {
-    const { data, error } = await supabase
+    let query = supabase
       .from(TABLE_DRAWS)
-      .select('winner_employee_id')
+      .select('winner_employee_id,selected_phone,source_date,drawn_at,checklist')
+      .order('source_date', { ascending: true })
       .order('drawn_at', { ascending: true })
       .range(from, from + pageSize - 1);
+    if (dateFrom) query = query.gte('source_date', dateFrom);
+    if (dateTo) query = query.lte('source_date', dateTo);
+    const { data, error } = await query;
     if (error) return { data: null, error };
     const page = data || [];
-    winnerIds.push(...page.map((draw) => draw.winner_employee_id));
+    draws.push(...page);
     if (page.length < pageSize) break;
   }
-  return { data: winnerIds, error: null };
+  return { data: draws, error: null };
 }
 
-async function exportAllTimeDrawStats() {
+function toggleDrawStatsInterval() {
+  const isCustom = $('drawStatsPeriod').value === 'custom';
+  document.querySelectorAll('.export-date').forEach((label) => { label.hidden = !isCustom; });
+}
+
+async function exportDrawStats() {
   if (!state.rouletteUnlocked) return requestRoulettePassword('stats');
+  const isCustom = $('drawStatsPeriod').value === 'custom';
+  const dateFrom = isCustom ? $('drawStatsDateFrom').value : '';
+  const dateTo = isCustom ? $('drawStatsDateTo').value : '';
+  if (isCustom && (!dateFrom || !dateTo)) return showToast('Укажите начало и конец периода');
+  if (isCustom && dateFrom > dateTo) return showToast('Дата начала не может быть позже даты окончания');
+
   const button = $('exportDrawStatsButton');
   button.disabled = true;
   button.textContent = 'Формируем…';
   try {
-    const { data: winnerIds, error } = await loadAllDrawWinners();
+    const { data: draws, error } = await loadDrawsForExport(dateFrom, dateTo);
     if (error) return showToast(`Ошибка выгрузки: ${error.message}`);
 
-    const counts = winnerIds.reduce((acc, employeeId) => {
-      acc[employeeId] = (acc[employeeId] || 0) + 1;
+    const employeeById = state.allEmployees.reduce((acc, employee) => {
+      acc[employee.id] = employee.name;
       return acc;
     }, {});
-    const rows = state.employees
-      .map((employee) => ({ name: employee.name, count: counts[employee.id] || 0 }))
-      .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, 'ru'));
-    const csvRows = [
+    const counts = draws.reduce((acc, draw) => {
+      acc[draw.winner_employee_id] = (acc[draw.winner_employee_id] || 0) + 1;
+      return acc;
+    }, {});
+    const summaryRows = [
       ['Сотрудник', 'Количество попаданий', 'Статус'],
-      ...rows.map((row) => [row.name, row.count, row.count ? 'Попадался' : '0 попаданий']),
+      ...state.employees
+        .map((employee) => ({ name: employee.name, count: counts[employee.id] || 0 }))
+        .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, 'ru'))
+        .map((row) => [row.name, { value: row.count, type: 'Number' }, row.count ? 'Попадался' : '0 попаданий']),
     ];
-    const csv = `\uFEFF${csvRows.map((row) => row.map(escapeCsvCell).join(';')).join('\r\n')}`;
-    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+    const detailRows = [
+      ['ФИО', 'Дата отбора', 'Номер клиента', 'Результат'],
+      ...draws.map((draw) => {
+        const score = getChecklistScore(draw.checklist);
+        return [
+          employeeById[draw.winner_employee_id] || 'Сотрудник не найден',
+          toRuDate(draw.source_date),
+          draw.selected_phone,
+          `${score.checked} из ${score.total}`,
+        ];
+      }),
+    ];
+    const periodLabel = isCustom ? `${toRuDate(dateFrom)} — ${toRuDate(dateTo)}` : 'всё время';
+    summaryRows.splice(1, 0, ['Период', periodLabel, '']);
+    const workbook = `<?xml version="1.0" encoding="UTF-8"?><?mso-application progid="Excel.Sheet"?><Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"><Styles><Style ss:ID="Header"><Font ss:Bold="1" ss:Color="#FFFFFF"/><Interior ss:Color="#C46A2D" ss:Pattern="Solid"/><Alignment ss:Vertical="Center"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1"/></Borders></Style><Style ss:ID="Body"><Alignment ss:Vertical="Center"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#D9D9D9"/></Borders></Style></Styles>${excelWorksheet('Сводная', summaryRows, [220, 130, 120])}${excelWorksheet('Все попадания', detailRows, [220, 105, 150, 100])}</Workbook>`;
+    const url = URL.createObjectURL(new Blob([workbook], { type: 'application/vnd.ms-excel;charset=utf-8' }));
     const link = document.createElement('a');
     link.href = url;
-    link.download = `статистика_отборов_за_все_время_${toLocalIso(new Date())}.csv`;
+    link.download = `статистика_отборов_${isCustom ? `${dateFrom}_${dateTo}` : 'за_все_время'}.xls`;
     document.body.appendChild(link);
     link.click();
     link.remove();
     URL.revokeObjectURL(url);
-    const zeroCount = rows.filter((row) => row.count === 0).length;
-    showToast(`Выгрузка готова: сотрудников ${rows.length}, с 0 попаданий — ${zeroCount}`);
+    const zeroCount = summaryRows.slice(2).filter((row) => row[2] === '0 попаданий').length;
+    showToast(`Excel готов: попаданий ${draws.length}, сотрудников с 0 — ${zeroCount}`);
   } finally {
     button.disabled = false;
-    button.textContent = 'Скачать CSV';
+    button.textContent = 'Скачать Excel';
   }
 }
 
@@ -879,7 +931,8 @@ function bindUi() {
   $('refreshStatsButton').addEventListener('click', renderStats);
   $('resultDateSelect').addEventListener('change', renderDrawResults);
   $('refreshResultsButton').addEventListener('click', renderDrawResults);
-  $('exportDrawStatsButton').addEventListener('click', exportAllTimeDrawStats);
+  $('drawStatsPeriod').addEventListener('change', toggleDrawStatsInterval);
+  $('exportDrawStatsButton').addEventListener('click', exportDrawStats);
   $('rouletteLock').addEventListener('click', (event) => {
     if (event.target === $('rouletteLock')) $('rouletteLock').hidden = true;
   });
